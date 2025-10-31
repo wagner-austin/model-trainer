@@ -1,9 +1,8 @@
 from __future__ import annotations
 
 import os
-import time
 from dataclasses import dataclass
-from typing import Final, Literal
+from typing import Final
 
 import redis
 
@@ -14,35 +13,38 @@ from ..api.schemas.runs import (
     TrainRequest,
 )
 from ..core.config.settings import Settings
-from ..core.services.queue.rq_adapter import (
-    EvalJobPayload,
-    RQEnqueuer,
-    TrainJobPayload,
-    TrainRequestPayload,
-)
-from ..infra.storage.run_store import RunStore
+from ..core.contracts.queue import EvalJobPayload, TrainJobPayload, TrainRequestPayload
+from ..core.logging.service import LoggingService
+from ..core.services.queue.rq_adapter import RQEnqueuer
 from ..infra.persistence.models import EvalCache
-
+from ..infra.storage.run_store import RunStore
 
 HEARTBEAT_KEY_PREFIX: Final[str] = "runs:hb:"
 STATUS_KEY_PREFIX: Final[str] = "runs:status:"
 EVAL_KEY_PREFIX: Final[str] = "runs:eval:"
 
 
-@dataclass(frozen=True)
+@dataclass
 class EnqueueOut:
     run_id: str
     job_id: str
 
 
 class TrainingOrchestrator:
-    def __init__(self, *, settings: Settings, redis_client: redis.Redis[str], enqueuer: RQEnqueuer) -> None:
+    def __init__(
+        self: TrainingOrchestrator,
+        *,
+        settings: Settings,
+        redis_client: redis.Redis[str],
+        enqueuer: RQEnqueuer,
+    ) -> None:
         self._settings = settings
         self._redis = redis_client
         self._enq = enqueuer
         self._store = RunStore(settings.app.runs_root, settings.app.artifacts_root)
+        self._logger = LoggingService.create().adapter(category="orchestrator", service="training")
 
-    def enqueue_training(self, req: TrainRequest) -> EnqueueOut:
+    def enqueue_training(self: TrainingOrchestrator, req: TrainRequest) -> EnqueueOut:
         run_id = self._store.create_run(req.model_family, req.model_size)
         request_payload: TrainRequestPayload = {
             "model_family": req.model_family,
@@ -55,11 +57,20 @@ class TrainingOrchestrator:
             "tokenizer_id": req.tokenizer_id,
         }
         payload: TrainJobPayload = {"run_id": run_id, "request": request_payload}
+        # Per-run log file
+        run_log_path = os.path.join(
+            self._settings.app.artifacts_root, "models", run_id, "logs.jsonl"
+        )
+        per_run_logger = LoggingService.create().attach_run_file(
+            path=run_log_path, category="training", service="orchestrator", run_id=run_id
+        )
+
         job_id = self._enq.enqueue_train(payload)
         self._redis.set(f"{STATUS_KEY_PREFIX}{run_id}", "queued")
+        per_run_logger.info("training enqueued", extra={"event": "enqueued", "run_id": run_id})
         return EnqueueOut(run_id=run_id, job_id=job_id)
 
-    def get_status(self, run_id: str) -> RunStatusResponse | None:
+    def get_status(self: TrainingOrchestrator, run_id: str) -> RunStatusResponse | None:
         status_v = self._redis.get(f"{STATUS_KEY_PREFIX}{run_id}")
         if status_v is None:
             return None
@@ -67,21 +78,37 @@ class TrainingOrchestrator:
         hb = float(hb_raw) if hb_raw is not None else None
         return RunStatusResponse(run_id=run_id, status=status_v, last_heartbeat_ts=hb)
 
-    def enqueue_evaluation(self, run_id: str, req: EvaluateRequest) -> EvaluateResponse:
+    def enqueue_evaluation(
+        self: TrainingOrchestrator, run_id: str, req: EvaluateRequest
+    ) -> EvaluateResponse:
         key = f"{STATUS_KEY_PREFIX}{run_id}"
         if self._redis.get(key) is None:
-            return EvaluateResponse(run_id=run_id, split=req.split, status="failed", loss=None, perplexity=None)
+            return EvaluateResponse(
+                run_id=run_id, split=req.split, status="failed", loss=None, perplexity=None
+            )
         payload: EvalJobPayload = {
             "run_id": run_id,
             "split": req.split,
             "path_override": req.path_override,
         }
+        run_log_path = os.path.join(
+            self._settings.app.artifacts_root, "models", run_id, "logs.jsonl"
+        )
+        per_run_logger = LoggingService.create().attach_run_file(
+            path=run_log_path, category="training", service="orchestrator", run_id=run_id
+        )
+
         _ = self._enq.enqueue_eval(payload)
         cache = EvalCache(status="queued", split=req.split, loss=None, ppl=None, artifact=None)
         self._redis.set(f"{EVAL_KEY_PREFIX}{run_id}", cache.model_dump_json())
-        return EvaluateResponse(run_id=run_id, split=req.split, status="queued", loss=None, perplexity=None)
+        per_run_logger.info(
+            "eval enqueued", extra={"event": "eval_enqueued", "run_id": run_id, "split": req.split}
+        )
+        return EvaluateResponse(
+            run_id=run_id, split=req.split, status="queued", loss=None, perplexity=None
+        )
 
-    def get_evaluation(self, run_id: str) -> EvaluateResponse | None:
+    def get_evaluation(self: TrainingOrchestrator, run_id: str) -> EvaluateResponse | None:
         raw = self._redis.get(f"{EVAL_KEY_PREFIX}{run_id}")
         if raw is None:
             return None

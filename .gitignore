@@ -46,3 +46,7 @@ data/
 datasets/
 outputs/
 checkpoints/
+
+# Allow type stubs under server/typings even if named like ignored dirs
+!server/typings/datasets/
+!server/typings/torch/utils/data/

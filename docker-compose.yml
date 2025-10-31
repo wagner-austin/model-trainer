@@ -1,0 +1,74 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: model-trainer-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  api:
+    build: ./server
+    image: model-trainer-api:latest
+    container_name: model-trainer-api
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - HF_HOME=/hf-cache
+    volumes:
+      - ./artifacts:/data/artifacts
+      - ./runs:/data/runs
+      - ./logs:/data/logs
+      - hf-cache:/hf-cache
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0) if urllib.request.urlopen('http://localhost:8000/readyz').getcode()==200 else sys.exit(1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  worker:
+    build: ./server
+    image: model-trainer-api:latest
+    container_name: model-trainer-worker
+    command: ["poetry", "run", "rq", "worker", "training", "--with-scheduler"]
+    env_file:
+      - .env
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - HF_HOME=/hf-cache
+    volumes:
+      - ./artifacts:/data/artifacts
+      - ./runs:/data/runs
+      - ./logs:/data/logs
+      - hf-cache:/hf-cache
+    depends_on:
+      redis:
+        condition: service_healthy
+    stop_grace_period: 30s
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "poetry run python -c \"import os,sys,redis; from rq import Worker; c=redis.from_url(os.environ.get('REDIS_URL','redis://redis:6379/0'), decode_responses=True); sys.exit(0 if Worker.all(c) else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  redis-data:
+  hf-cache:

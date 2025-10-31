@@ -6,6 +6,7 @@ from pathlib import Path
 
 import redis
 
+from ..core.config.settings import Settings
 from ..core.contracts.queue import TokenizerTrainPayload
 from ..core.contracts.tokenizer import TokenizerTrainConfig
 from ..core.services.tokenizer.bpe_backend import BPEBackend
@@ -21,10 +22,11 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
     r = _redis_client()
     tok_id = payload["tokenizer_id"]
     r.set(f"tokenizer:{tok_id}:status", "running")
-    artifacts_root = os.getenv("APP__ARTIFACTS_ROOT", "/data/artifacts")
+    settings = Settings()
+    artifacts_root = settings.app.artifacts_root
     out_dir = str(Path(artifacts_root) / "tokenizers" / tok_id)
     cfg = TokenizerTrainConfig(
-        method="bpe",
+        method=payload["method"],
         vocab_size=payload["vocab_size"],
         min_frequency=payload["min_frequency"],
         corpus_path=payload["corpus_path"],
@@ -32,8 +34,14 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
         seed=payload["seed"],
         out_dir=out_dir,
     )
-    backend = BPEBackend()
-    stats = backend.train(cfg)
+    # Select backend by method; currently only 'bpe' implemented
+    if payload["method"] == "bpe":
+        backend = BPEBackend()
+        stats = backend.train(cfg)
+    else:
+        r.set(f"tokenizer:{tok_id}:status", "failed")
+        log.error("Unsupported tokenizer method: %s", payload["method"])
+        return
     r.set(f"tokenizer:{tok_id}:status", "completed")
     r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
     log.info("Tokenizer training completed id=%s out=%s", tok_id, out_dir)

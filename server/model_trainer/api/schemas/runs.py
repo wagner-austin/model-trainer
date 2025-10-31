@@ -1,24 +1,28 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
 
 class TrainRequest(BaseModel):
-    model_family: Literal["gpt2", "llama", "qwen"] = Field(default="gpt2")
-    model_size: str = Field(default="small")
-    max_seq_len: int = Field(default=512, ge=8)
-    num_epochs: int = Field(default=1, ge=1)
-    batch_size: int = Field(default=4, ge=1)
-    learning_rate: float = Field(default=5e-4, gt=0)
-    corpus_path: str = Field(description="Path to text corpus root or file")
-    tokenizer_id: str = Field(description="Tokenizer artifact ID to use")
+    model_family: Annotated[Literal["gpt2", "llama", "qwen"], Field(default="gpt2")]
+    model_size: Annotated[str, Field(default="small")]
+    max_seq_len: Annotated[int, Field(default=512, ge=8)]
+    num_epochs: Annotated[int, Field(default=1, ge=1)]
+    batch_size: Annotated[int, Field(default=4, ge=1)]
+    learning_rate: Annotated[float, Field(default=5e-4, gt=0)]
+    corpus_path: Annotated[str, Field(description="Path to text corpus root or file")]
+    tokenizer_id: Annotated[str, Field(description="Tokenizer artifact ID to use")]
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
 
 
 class TrainResponse(BaseModel):
     run_id: str
     job_id: str
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
 
 
 class RunStatusResponse(BaseModel):
@@ -27,10 +31,14 @@ class RunStatusResponse(BaseModel):
     last_heartbeat_ts: float | None = None
     message: str | None = None
 
+    model_config = {"extra": "forbid", "validate_assignment": True}
+
 
 class EvaluateRequest(BaseModel):
-    split: Literal["validation", "test"] = Field(default="validation")
+    split: Annotated[Literal["validation", "test"], Field(default="validation")]
     path_override: str | None = None
+
+    model_config = {"extra": "forbid", "validate_assignment": True}
 
 
 class EvaluateResponse(BaseModel):
@@ -41,3 +49,10 @@ class EvaluateResponse(BaseModel):
     perplexity: float | None = None
     artifact_path: str | None = None
 
+    model_config = {"extra": "forbid", "validate_assignment": True}
+
+
+class CancelResponse(BaseModel):
+    status: Literal["cancellation-requested"]
+
+    model_config = {"extra": "forbid", "validate_assignment": True}

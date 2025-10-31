@@ -50,3 +50,4 @@ def test_bpe_trains_and_writes_artifacts(tmp_path: Path) -> None:
     manifest = _Manifest.model_validate_json(text)
     assert isinstance(manifest.config.vocab_size, int)
     assert 0.0 <= manifest.stats.coverage <= 1.0
+    assert 0.0 <= manifest.stats.char_coverage <= 1.0

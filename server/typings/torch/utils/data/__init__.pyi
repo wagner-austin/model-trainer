@@ -1,0 +1,16 @@
+from __future__ import annotations
+
+from collections.abc import Iterator
+from typing import Generic, TypeVar
+
+T_co = TypeVar("T_co", covariant=True)
+
+class Dataset(Generic[T_co]):
+    def __len__(self: Dataset[T_co]) -> int: ...
+    def __getitem__(self: Dataset[T_co], index: int) -> T_co: ...
+
+class DataLoader(Generic[T_co]):
+    def __init__(
+        self: DataLoader[T_co], dataset: Dataset[T_co], batch_size: int, shuffle: bool = ...
+    ) -> None: ...
+    def __iter__(self: DataLoader[T_co]) -> Iterator[T_co]: ...

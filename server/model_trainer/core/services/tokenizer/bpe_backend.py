@@ -74,17 +74,27 @@ def train_bpe_tokenizer(corpus_path: str, out_dir: str, cfg: BPETrainConfig) -> 
     sample = lines[:holdout_n]
     total_tokens = 0
     unk_tokens = 0
-    total_chars = 0
     for s in sample:
         enc = tokenizer.encode(s)
         total_tokens += len(enc.ids)
-        total_chars += len(s)
         # OOV approximated as count of UNK id occurrences
         _unk = tokenizer.token_to_id(cfg.special_tokens[1])
         unk_id_to_count = _unk if _unk is not None else -1
         unk_tokens += int(enc.ids.count(unk_id_to_count))
     coverage = 1.0 if total_tokens == 0 else max(0.0, 1.0 - (unk_tokens / max(1, total_tokens)))
-    char_cov = 1.0 if total_chars == 0 else min(1.0, (sum(len(s) for s in sample) / total_chars))
+
+    # Character coverage: fraction of distinct characters that encode to any non-UNK id
+    # This avoids relying on offsets and gives a stable [0,1] signal across corpora.
+    uniq_chars = set("".join(sample))
+    covered_chars = 0
+    unk_id = tokenizer.token_to_id(cfg.special_tokens[1])
+    for ch in uniq_chars:
+        ids = tokenizer.encode(ch).ids
+        if not ids:
+            continue
+        if unk_id is None or any(tid != unk_id for tid in ids):
+            covered_chars += 1
+    char_cov = 1.0 if len(uniq_chars) == 0 else max(0.0, min(1.0, covered_chars / len(uniq_chars)))
     stats = TokenizerStats(
         coverage=coverage,
         oov_rate=(unk_tokens / max(1, total_tokens)),

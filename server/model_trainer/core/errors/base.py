@@ -12,11 +12,10 @@ class ErrorCode(str, Enum):
 
 
 class AppError(Exception):
-    def __init__(self, code: ErrorCode, message: str) -> None:
+    def __init__(self: AppError, code: ErrorCode, message: str) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
 
-    def to_dict(self) -> dict[str, str]:
+    def to_dict(self: AppError) -> dict[str, str]:
         return {"error": self.code.value, "message": self.message}
-

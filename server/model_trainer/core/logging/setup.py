@@ -9,7 +9,7 @@ import time
 
 
 class JsonFormatter(logging.Formatter):
-    def format(self, record: logging.LogRecord) -> str:  # pragma: no cover - trivial
+    def format(self: JsonFormatter, record: logging.LogRecord) -> str:  # pragma: no cover - trivial
         payload: dict[str, object] = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(record.created)),
             "level": record.levelname,
@@ -29,7 +29,15 @@ def _compute_instance_id() -> str:
 
 
 def setup_logging(level: str = "INFO") -> None:
-    lvl = getattr(logging, level.upper(), logging.INFO)
+    levels: dict[str, int] = {
+        "CRITICAL": logging.CRITICAL,
+        "ERROR": logging.ERROR,
+        "WARNING": logging.WARNING,
+        "INFO": logging.INFO,
+        "DEBUG": logging.DEBUG,
+        "NOTSET": logging.NOTSET,
+    }
+    lvl = levels.get(level.upper(), logging.INFO)
     root = logging.getLogger()
     root.handlers.clear()
     root.setLevel(lvl)

@@ -1,0 +1,6 @@
+from __future__ import annotations
+
+from torch import Tensor
+
+def load(f: str, map_location: str = ...) -> dict[str, Tensor]: ...
+def save(obj: dict[str, Tensor], f: str) -> None: ...

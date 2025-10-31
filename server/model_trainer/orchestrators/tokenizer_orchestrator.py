@@ -38,7 +38,7 @@ class TokenizerOrchestrator:
         self._redis.set(f"tokenizer:{tokenizer_id}:status", "queued")
         payload: TokenizerTrainPayload = {
             "tokenizer_id": tokenizer_id,
-            "method": "bpe",
+            "method": req.method,
             "vocab_size": req.vocab_size,
             "min_frequency": req.min_frequency,
             "corpus_path": req.corpus_path,

@@ -62,7 +62,7 @@ A modular, robust, and strictly typed system to train and evaluate language mode
 
 - Language (Core/API): Python 3.11+
   - Strict typing: mypy (strict mode), no `typing.Any`, no `typing.cast`.
-  - Pydantic v2 for config/schema validation and coercion.
+  - Pydantic v2 for all data models (configs, DTOs, results). Prefer `BaseModel` with `extra="forbid"` and `validate_assignment=True`. Avoid `@dataclass` for these shapes.
   - FastAPI + Uvicorn for API with typed routes and models.
   - Hugging Face: Transformers, Datasets, Tokenizers.
   - PyTorch (CPU) for training; CPU threading configured explicitly.
@@ -121,7 +121,7 @@ Use Python `typing.Protocol` to define implementation-agnostic contracts. No `An
 
 ### 6.1 Tokenizer Contracts
 
-- `TokenizerConfig`: frozen dataclass including `method`, `vocab_size`, `min_frequency`, normalization options, and `special_tokens`.
+- `TokenizerConfig`: Pydantic model including `method`, `vocab_size`, `min_frequency`, normalization options, and `special_tokens`.
 - `TokenizerTrainRequest`: input corpus path(s), holdout fraction, seed, threads.
 - `TokenizerStats`: coverage, OOV rate, token count, char coverage.
 - `TokenizerArtifact`: paths to vocab/merges or model files, manifest.
@@ -139,6 +139,17 @@ Protocol:
 Notes:
 - Provide BPE via Hugging Face Tokenizers; SentencePiece via `sentencepiece`.
 - Multi-threaded training via library options and parallel corpus streaming.
+
+### 6.6 Data Models Policy (Pydantic-first)
+- Use `pydantic.BaseModel` for:
+  - API schemas, configuration objects, contract types (e.g., `TokenizerTrainConfig`, `ModelTrainConfig`), and result/DTO types (e.g., `TrainOutcome`, `TokenizerTrainStats`).
+- Use `TypedDict` for JSON-like manifests persisted to disk (e.g., training manifest structures).
+- Use plain classes (or non-frozen dataclasses) for services/containers where runtime validation is not needed and unit tests may monkeypatch attributes.
+
+Guard enforcement:
+- Disallow `@dataclass(frozen=True)` and any `@dataclass` in `core/contracts` and `core/config`.
+- Disallow `typing.Any`, `typing.cast`, `type: ignore`.
+- Disallow `print()` in library code; allowed in tests.
 
 ### 6.2 Model Contracts
 
@@ -206,6 +217,10 @@ Benefits:
 - API layer maps `AppError` to HTTP error responses with structured JSON body.
 - Orchestrators catch known exceptions, convert to `AppError`, log with context, re-raise.
 - Unknown exceptions bubble to a global handler that logs with stack and returns a sanitized error body.
+
+Policy (enforced by guard):
+- Broad catches (`except:`, `except Exception`, `except BaseException`) must both log (error/exception) and re-raise.
+- Specific exception catches must at least log or re-raise; prefer structured logging and typed re-throws.
 
 
 ## 10. Configuration & Reproducibility

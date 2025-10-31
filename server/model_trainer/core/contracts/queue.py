@@ -27,7 +27,7 @@ class EvalJobPayload(TypedDict):
 
 class TokenizerTrainPayload(TypedDict):
     tokenizer_id: str
-    method: Literal["bpe"]
+    method: Literal["bpe", "sentencepiece"]
     vocab_size: int
     min_frequency: int
     corpus_path: str

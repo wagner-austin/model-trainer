@@ -13,6 +13,7 @@ class TokenizerTrainConfig(BaseModel):
     holdout_fraction: float
     seed: int
     out_dir: str
+    sample_max_lines: int | None = None
 
     model_config = {"extra": "forbid", "validate_assignment": True}
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ...core.config.settings import Settings
+from ...core.infra.paths import artifacts_root
 from ...core.logging.types import LoggingExtra
 from ...core.services.container import ServiceContainer
 from ..schemas.artifacts import ArtifactListResponse
@@ -19,7 +20,7 @@ def _list_artifacts_impl(
     kind: Literal["tokenizers", "models"],
     item_id: str,
 ) -> ArtifactListResponse:
-    base = Path(settings.app.artifacts_root) / kind / item_id
+    base = artifacts_root(settings) / kind / item_id
     if not base.exists() or not base.is_dir():
         raise HTTPException(status_code=404, detail="artifact not found")
     files: list[str] = []
@@ -47,7 +48,7 @@ def _download_impl(
     request: Request,
     path: str,
 ) -> StreamingResponse | FileResponse:
-    base = Path(settings.app.artifacts_root) / kind / item_id
+    base = artifacts_root(settings) / kind / item_id
     target = _resolve_target(base, path)
     extra2: LoggingExtra = {
         "event": "artifacts_download",

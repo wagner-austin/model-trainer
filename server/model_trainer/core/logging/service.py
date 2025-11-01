@@ -5,7 +5,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from logging import Logger, LoggerAdapter
+from logging import Handler, Logger, LoggerAdapter
 from pathlib import Path
 
 
@@ -44,6 +44,9 @@ class _JsonFormatter(logging.Formatter):
         return json.dumps(payload, separators=(",", ":"))
 
 
+_HANDLERS: dict[str, Handler] = {}
+
+
 @dataclass
 class LoggingService:
     base_logger: Logger
@@ -77,11 +80,27 @@ class LoggingService:
         tokenizer_id: str | None = None,
     ) -> LoggerAdapter[Logger]:
         os.makedirs(Path(path).parent, exist_ok=True)
-        handler = logging.FileHandler(path, encoding="utf-8")
-        handler.setFormatter(
-            _JsonFormatter(static_fields={"category": category, "service": service})
-        )
-        self.base_logger.addHandler(handler)
+        abs_path = str(Path(path).resolve())
+        handler = _HANDLERS.get(abs_path)
+        if handler is None:
+            handler = logging.FileHandler(abs_path, encoding="utf-8")
+            handler.setFormatter(
+                _JsonFormatter(static_fields={"category": category, "service": service})
+            )
+            self.base_logger.addHandler(handler)
+            _HANDLERS[abs_path] = handler
         return self.adapter(
             category=category, service=service, run_id=run_id, tokenizer_id=tokenizer_id
         )
+
+    def close_run_file(self: LoggingService, *, path: str) -> None:
+        abs_path = str(Path(path).resolve())
+        handler = _HANDLERS.get(abs_path)
+        if handler is not None:
+            try:
+                self.base_logger.removeHandler(handler)
+            finally:
+                try:
+                    handler.close()
+                finally:
+                    _HANDLERS.pop(abs_path, None)

@@ -23,6 +23,7 @@ from ....infra.persistence.models import (
 )
 from ...config.settings import Settings
 from ...contracts.dataset import DatasetBuilder, DatasetConfig
+from ...infra.paths import model_dir, model_eval_dir
 from .dataset_builder import CausalLMDataset, _TokenizerProto
 
 
@@ -174,7 +175,7 @@ def train_gpt2(
         if was_cancelled:
             break
 
-    out_dir = str(Path(artifacts_root) / "models" / run_id)
+    out_dir = str(model_dir(settings, run_id))
     os.makedirs(out_dir, exist_ok=True)
     # Save model weights only if not cancelled
     if not was_cancelled:
@@ -251,7 +252,7 @@ def evaluate_gpt2(
 
     total_loss = 0.0
     total_count = 0
-    eval_dir = Path(settings.app.artifacts_root) / "models" / run_id / "eval"
+    eval_dir = model_eval_dir(settings, run_id)
     eval_dir.mkdir(parents=True, exist_ok=True)
     total_loss = 0.0
     total_count = 0

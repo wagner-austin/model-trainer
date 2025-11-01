@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -10,6 +11,7 @@ from ...orchestrators.training_orchestrator import TrainingOrchestrator
 from ..config.settings import Settings
 from ..contracts.dataset import DatasetBuilder
 from ..contracts.model import EvalOutcome, ModelBackend, ModelTrainConfig, TrainOutcome
+from ..contracts.tokenizer import TokenizerBackend
 from ..logging.service import LoggingService
 from ..services.dataset.local_text_builder import LocalTextDatasetBuilder
 from ..services.registries import ModelRegistry, TokenizerRegistry
@@ -103,7 +105,12 @@ class ServiceContainer:
                 return EvalOutcome(loss=res.loss, perplexity=res.perplexity)
 
         model_registry = ModelRegistry(backends={"gpt2": _GPT2Backend()})
-        tokenizer_registry = TokenizerRegistry(backends={"bpe": BPEBackend()})
+        tok_backends: dict[str, TokenizerBackend] = {"bpe": BPEBackend()}
+        if all(shutil.which(x) is not None for x in ("spm_train", "spm_encode", "spm_decode")):
+            from .tokenizer.spm_backend import SentencePieceBackend
+
+            tok_backends["sentencepiece"] = SentencePieceBackend()
+        tokenizer_registry = TokenizerRegistry(backends=tok_backends)
         logging_service = LoggingService.create()
         return cls(
             settings=settings,

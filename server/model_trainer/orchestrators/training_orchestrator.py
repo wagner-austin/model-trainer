@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Final
 
@@ -14,6 +13,8 @@ from ..api.schemas.runs import (
 )
 from ..core.config.settings import Settings
 from ..core.contracts.queue import EvalJobPayload, TrainJobPayload, TrainRequestPayload
+from ..core.infra.paths import model_logs_path
+from ..core.infra.redis_utils import get_with_retry, set_with_retry
 from ..core.logging.service import LoggingService
 from ..core.services.queue.rq_adapter import RQEnqueuer
 from ..infra.persistence.models import EvalCache
@@ -45,6 +46,15 @@ class TrainingOrchestrator:
         self._logger = LoggingService.create().adapter(category="orchestrator", service="training")
 
     def enqueue_training(self: TrainingOrchestrator, req: TrainRequest) -> EnqueueOut:
+        # Early validation: currently only gpt2 is supported
+        if req.model_family != "gpt2":
+            from ..core.errors.base import AppError, ErrorCode
+
+            self._logger.info(
+                "unsupported model family",
+                extra={"event": "model_backend_unavailable", "model_family": req.model_family},
+            )
+            raise AppError(ErrorCode.CONFIG_INVALID, "unsupported model family")
         run_id = self._store.create_run(req.model_family, req.model_size)
         request_payload: TrainRequestPayload = {
             "model_family": req.model_family,
@@ -58,23 +68,26 @@ class TrainingOrchestrator:
         }
         payload: TrainJobPayload = {"run_id": run_id, "request": request_payload}
         # Per-run log file
-        run_log_path = os.path.join(
-            self._settings.app.artifacts_root, "models", run_id, "logs.jsonl"
-        )
-        per_run_logger = LoggingService.create().attach_run_file(
+        run_log_path = str(model_logs_path(self._settings, run_id))
+        logsvc = LoggingService.create()
+        per_run_logger = logsvc.attach_run_file(
             path=run_log_path, category="training", service="orchestrator", run_id=run_id
         )
 
         job_id = self._enq.enqueue_train(payload)
-        self._redis.set(f"{STATUS_KEY_PREFIX}{run_id}", "queued")
+        set_with_retry(self._redis, f"{STATUS_KEY_PREFIX}{run_id}", "queued")
         per_run_logger.info("training enqueued", extra={"event": "enqueued", "run_id": run_id})
+        logsvc.close_run_file(path=run_log_path)
         return EnqueueOut(run_id=run_id, job_id=job_id)
 
-    def get_status(self: TrainingOrchestrator, run_id: str) -> RunStatusResponse | None:
-        status_v = self._redis.get(f"{STATUS_KEY_PREFIX}{run_id}")
+    def get_status(self: TrainingOrchestrator, run_id: str) -> RunStatusResponse:
+        status_v = get_with_retry(self._redis, f"{STATUS_KEY_PREFIX}{run_id}")
         if status_v is None:
-            return None
-        hb_raw = self._redis.get(f"{HEARTBEAT_KEY_PREFIX}{run_id}")
+            from ..core.errors.base import AppError, ErrorCode
+
+            self._logger.info("run not found", extra={"event": "run_not_found", "run_id": run_id})
+            raise AppError(ErrorCode.DATA_NOT_FOUND, "run not found")
+        hb_raw = get_with_retry(self._redis, f"{HEARTBEAT_KEY_PREFIX}{run_id}")
         hb = float(hb_raw) if hb_raw is not None else None
         return RunStatusResponse(run_id=run_id, status=status_v, last_heartbeat_ts=hb)
 
@@ -91,27 +104,30 @@ class TrainingOrchestrator:
             "split": req.split,
             "path_override": req.path_override,
         }
-        run_log_path = os.path.join(
-            self._settings.app.artifacts_root, "models", run_id, "logs.jsonl"
-        )
-        per_run_logger = LoggingService.create().attach_run_file(
+        run_log_path = str(model_logs_path(self._settings, run_id))
+        logsvc2 = LoggingService.create()
+        per_run_logger = logsvc2.attach_run_file(
             path=run_log_path, category="training", service="orchestrator", run_id=run_id
         )
 
         _ = self._enq.enqueue_eval(payload)
         cache = EvalCache(status="queued", split=req.split, loss=None, ppl=None, artifact=None)
-        self._redis.set(f"{EVAL_KEY_PREFIX}{run_id}", cache.model_dump_json())
+        set_with_retry(self._redis, f"{EVAL_KEY_PREFIX}{run_id}", cache.model_dump_json())
         per_run_logger.info(
             "eval enqueued", extra={"event": "eval_enqueued", "run_id": run_id, "split": req.split}
         )
+        logsvc2.close_run_file(path=run_log_path)
         return EvaluateResponse(
             run_id=run_id, split=req.split, status="queued", loss=None, perplexity=None
         )
 
-    def get_evaluation(self: TrainingOrchestrator, run_id: str) -> EvaluateResponse | None:
-        raw = self._redis.get(f"{EVAL_KEY_PREFIX}{run_id}")
+    def get_evaluation(self: TrainingOrchestrator, run_id: str) -> EvaluateResponse:
+        raw = get_with_retry(self._redis, f"{EVAL_KEY_PREFIX}{run_id}")
         if raw is None:
-            return None
+            from ..core.errors.base import AppError, ErrorCode
+
+            self._logger.info("eval not found", extra={"event": "eval_not_found", "run_id": run_id})
+            raise AppError(ErrorCode.DATA_NOT_FOUND, "evaluation not found")
         cache = EvalCache.model_validate_json(raw)
         return EvaluateResponse(
             run_id=run_id,

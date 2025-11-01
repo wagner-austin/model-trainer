@@ -5,14 +5,17 @@ from pathlib import Path
 
 import fakeredis
 from _pytest.monkeypatch import MonkeyPatch
+from model_trainer.core.contracts.queue import TokenizerTrainPayload
 from model_trainer.worker.tokenizer_worker import process_tokenizer_train_job
 
 
-def test_tokenizer_worker_uses_settings_artifacts_root(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+def test_tokenizer_worker_uses_settings_artifacts_root(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
     # Ensure worker uses our fake redis
     fake = fakeredis.FakeRedis(decode_responses=True)
 
-    def _fake_from_url(url: str, decode_responses: bool = False):
+    def _fake_from_url(url: str, decode_responses: bool = False) -> fakeredis.FakeRedis:
         return fake
 
     monkeypatch.setattr(
@@ -24,7 +27,7 @@ def test_tokenizer_worker_uses_settings_artifacts_root(tmp_path: Path, monkeypat
     artifacts = tmp_path / "artifacts"
     os.environ["APP__ARTIFACTS_ROOT"] = str(artifacts)
 
-    payload = {
+    payload: TokenizerTrainPayload = {
         "tokenizer_id": "tok-worker",
         "method": "bpe",
         "vocab_size": 64,
@@ -43,4 +46,3 @@ def test_tokenizer_worker_uses_settings_artifacts_root(tmp_path: Path, monkeypat
     out_dir = artifacts / "tokenizers" / "tok-worker"
     assert (out_dir / "tokenizer.json").exists()
     assert (out_dir / "manifest.json").exists()
-

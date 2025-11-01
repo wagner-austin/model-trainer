@@ -7,7 +7,9 @@ import redis
 from pydantic import BaseModel
 
 from ..core.config.settings import Settings
+from ..core.contracts.compute import LocalCPUProvider
 from ..core.contracts.queue import EvalJobPayload, TrainJobPayload
+from ..core.infra.paths import model_logs_path
 from ..core.logging.service import LoggingService
 from ..core.services.dataset.local_text_builder import LocalTextDatasetBuilder
 from ..core.services.training.gpt2_backend import GPT2TrainConfig, evaluate_gpt2, train_gpt2
@@ -30,8 +32,15 @@ def process_train_job(payload: TrainJobPayload) -> None:
     r = _redis_client()
     run_id = payload["run_id"]
     r.set(f"{STATUS_KEY_PREFIX}{run_id}", "running")
-
     settings = Settings()
+    # Apply local CPU compute environment
+    # Prefer configured threads; fall back to CPU count
+    threads_cfg = settings.app.threads
+    threads = threads_cfg if threads_cfg and threads_cfg > 0 else max(1, int(os.cpu_count() or 1))
+    env = LocalCPUProvider(threads_count=threads).env()
+    for k, v in env.items():
+        os.environ[k] = v
+
     req = payload["request"]
     cfg = GPT2TrainConfig(
         model_family="gpt2",
@@ -72,7 +81,7 @@ def process_train_job(payload: TrainJobPayload) -> None:
         r.set(f"{STATUS_KEY_PREFIX}{run_id}", "completed")
         # Per-run structured log
         logsvc = LoggingService.create()
-        run_log_path = os.path.join(settings.app.artifacts_root, "models", run_id, "logs.jsonl")
+        run_log_path = str(model_logs_path(settings, run_id))
         per_run_logger = logsvc.attach_run_file(
             path=run_log_path, category="training", service="worker", run_id=run_id
         )
@@ -86,6 +95,8 @@ def process_train_job(payload: TrainJobPayload) -> None:
                 "steps": result.steps,
             },
         )
+        # Release handler for long-running worker process
+        logsvc.close_run_file(path=run_log_path)
     except Exception as e:
         r.set(f"{STATUS_KEY_PREFIX}{run_id}", "failed")
         log.exception("Training job failed run_id=%s error=%s", run_id, e)

@@ -4,7 +4,7 @@ import fakeredis
 from _pytest.monkeypatch import MonkeyPatch
 from fastapi.testclient import TestClient
 from model_trainer.api.main import create_app
-from model_trainer.api.schemas.tokenizers import TokenizerTrainRequest, TokenizerTrainResponse
+from model_trainer.api.schemas.tokenizers import TokenizerTrainResponse
 from model_trainer.core.config.settings import Settings
 from model_trainer.core.services.container import ServiceContainer
 
@@ -38,4 +38,3 @@ def test_tokenizer_enqueue_passes_method(monkeypatch: MonkeyPatch) -> None:
     assert r.status_code == 200
     _ = TokenizerTrainResponse.model_validate_json(r.text)
     assert captured.get("method") == "bpe"
-

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import random
 import time
 from pathlib import Path
 
@@ -21,7 +20,7 @@ from ...contracts.tokenizer import (
 from ...contracts.tokenizer import (
     TokenizerTrainStats as _TokenizerTrainStats,
 )
-from ..data.corpus import iter_lines, list_text_files
+from ..data.corpus import count_lines, list_text_files, sample_lines
 
 
 class TokenizerStats(BaseModel):
@@ -38,6 +37,7 @@ class BPETrainConfig(BaseModel):
     min_frequency: int
     holdout_fraction: float
     seed: int
+    sample_max_lines: int | None = None
     special_tokens: tuple[str, ...] = ("[PAD]", "[UNK]", "[BOS]", "[EOS]")
 
     model_config = {"extra": "forbid", "validate_assignment": True}
@@ -67,11 +67,11 @@ def train_bpe_tokenizer(corpus_path: str, out_dir: str, cfg: BPETrainConfig) -> 
     tokenizer.save(tok_path)
 
     # Validation stats on a small holdout sample
-    lines = list(iter_lines(files))
-    random.seed(cfg.seed)
-    random.shuffle(lines)
-    holdout_n = max(1, int(len(lines) * cfg.holdout_fraction))
-    sample = lines[:holdout_n]
+    total = count_lines(files)
+    holdout_n = max(1, int(total * cfg.holdout_fraction))
+    if cfg.sample_max_lines is not None and cfg.sample_max_lines > 0:
+        holdout_n = min(holdout_n, int(cfg.sample_max_lines))
+    sample = sample_lines(files, holdout_n, seed=cfg.seed)
     total_tokens = 0
     unk_tokens = 0
     for s in sample:
@@ -154,6 +154,7 @@ class BPEBackend(_TokenizerBackendProto):
                 min_frequency=cfg.min_frequency,
                 holdout_fraction=cfg.holdout_fraction,
                 seed=cfg.seed,
+                sample_max_lines=cfg.sample_max_lines,
             ),
         )
         return _TokenizerTrainStats(

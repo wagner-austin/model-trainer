@@ -24,3 +24,29 @@ def iter_lines(files: Sequence[str]) -> Iterator[str]:
                 s = line.strip()
                 if s:
                     yield s
+
+
+def count_lines(files: Sequence[str]) -> int:
+    n = 0
+    for _ in iter_lines(files):
+        n += 1
+    return n
+
+
+def sample_lines(files: Sequence[str], k: int, *, seed: int) -> list[str]:
+    import random
+
+    if k <= 0:
+        return []
+    rng = random.Random(seed)
+    reservoir: list[str] = []
+    i = 0
+    for s in iter_lines(files):
+        i += 1
+        if len(reservoir) < k:
+            reservoir.append(s)
+        else:
+            j = rng.randint(1, i)
+            if j <= k:
+                reservoir[j - 1] = s
+    return reservoir

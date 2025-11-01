@@ -5,6 +5,7 @@ import os
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
+from ...core.infra.paths import model_logs_path
 from ...core.logging.types import LoggingExtra
 from ...core.services.container import ServiceContainer
 from ..schemas.runs import (
@@ -18,6 +19,8 @@ from ..schemas.runs import (
 
 
 class _RunsRoutes:
+    c: ServiceContainer
+
     def __init__(self: _RunsRoutes, container: ServiceContainer) -> None:
         self.c = container
 
@@ -36,10 +39,7 @@ class _RunsRoutes:
 
     def run_status(self: _RunsRoutes, run_id: str) -> RunStatusResponse:
         orchestrator = self.c.training_orchestrator
-        status_out = orchestrator.get_status(run_id)
-        if status_out is None:
-            raise HTTPException(status_code=404, detail="run not found")
-        return status_out
+        return orchestrator.get_status(run_id)
 
     def run_evaluate(self: _RunsRoutes, run_id: str, req: EvaluateRequest) -> EvaluateResponse:
         orchestrator = self.c.training_orchestrator
@@ -51,14 +51,11 @@ class _RunsRoutes:
 
     def run_eval_result(self: _RunsRoutes, run_id: str) -> EvaluateResponse:
         orchestrator = self.c.training_orchestrator
-        result = orchestrator.get_evaluation(run_id)
-        if result is None:
-            raise HTTPException(status_code=404, detail="eval not found")
+        result: EvaluateResponse = orchestrator.get_evaluation(run_id)
         return result
 
     def run_logs(self: _RunsRoutes, run_id: str, tail: int = 200) -> PlainTextResponse:
-        base = self.c.settings.app.artifacts_root
-        path = os.path.join(base, "models", run_id, "logs.jsonl")
+        path = str(model_logs_path(self.c.settings, run_id))
         if not os.path.exists(path):
             raise HTTPException(status_code=404, detail="logs not found")
         try:

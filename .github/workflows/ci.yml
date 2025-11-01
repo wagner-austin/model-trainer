@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Poetry
+        run: pip install poetry==1.8.3
+      - name: Install deps
+        working-directory: server
+        run: |
+          poetry lock
+          poetry sync --with dev
+      - name: Ruff
+        working-directory: server
+        run: poetry run ruff check . --output-format=github
+      - name: Ruff format check
+        working-directory: server
+        run: poetry run ruff format --check .
+      - name: Mypy
+        working-directory: server
+        run: poetry run mypy .
+      - name: Guards
+        run: python scripts/guard.py
+      - name: Tests
+        working-directory: server
+        run: poetry run pytest -q
+

@@ -52,6 +52,7 @@ See `Model-Trainer/.env.example` for defaults.
   - `POST /runs/{run_id}/evaluate` – enqueue eval
   - `GET /runs/{run_id}/eval` – latest eval summary
   - `GET /runs/{run_id}/logs?tail=200` – tail per‑run logs.jsonl
+  - `GET /runs/{run_id}/logs/stream?tail=200` – SSE stream of logs
 - Artifacts
   - `GET /artifacts/{kind}/{item_id}` – list files
   - `GET /artifacts/{kind}/{item_id}/download?path=...` – download file (supports HTTP Range)
@@ -64,11 +65,18 @@ See `Model-Trainer/.env.example` for defaults.
   - Training: heartbeats (`runs:hb:<id>`), cancellation via `runs:<id>:cancelled=1`, per-run logs at `artifacts/models/<id>/logs.jsonl`
   - Tokenizer: status and stats persisted in Redis + artifacts folder
 
+Compose notes:
+- A `./corpus` folder is mounted read‑only at `/data/corpus` in containers.
+- When using Docker, ensure `corpus_path` you pass to the API is under `/data` (e.g., `/data/corpus`).
+
 ## Artifacts & Layout
 - `artifacts/tokenizers/<tokenizer_id>/`
   - `tokenizer.json`, `manifest.json`, `logs.jsonl`
 - `artifacts/models/<run_id>/`
   - `pytorch_model.bin`, `manifest.json`, `logs.jsonl`, `eval/metrics.json`
+  
+Additionally:
+- `runs/<run_id>/manifest.json` links to artifact and logs locations for reproducibility.
 
 ## Typing & Quality Gates
 - Python: `mypy --strict` with no `Any`, no casts
@@ -96,4 +104,3 @@ See `Model-Trainer/.env.example` for defaults.
 ## Notes
 - CPU-only MVP, tiny GPT‑2 config; use GPU by swapping compute provider in a future iteration
 - Optional Discord DM status bot and UI are deferred; design supports adding them later via contracts
-

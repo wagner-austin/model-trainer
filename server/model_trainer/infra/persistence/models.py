@@ -29,11 +29,14 @@ class TrainingManifestSystem(TypedDict):
 
 class TrainingManifest(TypedDict):
     run_id: str
+    model_family: str
+    model_size: str
     epochs: int
     batch_size: int
     max_seq_len: int
     steps: int
     loss: float
+    learning_rate: float
     tokenizer_id: str
     corpus_path: str
     optimizer: str

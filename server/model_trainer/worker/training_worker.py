@@ -8,11 +8,13 @@ from pydantic import BaseModel
 
 from ..core.config.settings import Settings
 from ..core.contracts.compute import LocalCPUProvider
+from ..core.contracts.model import ModelTrainConfig
 from ..core.contracts.queue import EvalJobPayload, TrainJobPayload
-from ..core.infra.paths import model_logs_path
+from ..core.infra.paths import model_dir, model_logs_path
 from ..core.logging.service import LoggingService
-from ..core.services.dataset.local_text_builder import LocalTextDatasetBuilder
-from ..core.services.training.gpt2_backend import GPT2TrainConfig, evaluate_gpt2, train_gpt2
+from ..core.services.container import ServiceContainer
+from ..core.services.tokenizer.bpe_backend import BPEBackend
+from ..core.services.tokenizer.spm_backend import SentencePieceBackend
 
 HEARTBEAT_KEY_PREFIX = "runs:hb:"
 STATUS_KEY_PREFIX = "runs:status:"
@@ -40,10 +42,20 @@ def process_train_job(payload: TrainJobPayload) -> None:
     env = LocalCPUProvider(threads_count=threads).env()
     for k, v in env.items():
         os.environ[k] = v
+    # Ensure tokenizer parallelism is disabled for reproducibility and CPU fairness
+    os.environ["TOKENIZERS_PARALLELISM"] = "1"
+    try:
+        import torch as _torch
+
+        _torch.set_num_threads(threads)
+        # A conservative interop threads value
+        _torch.set_num_interop_threads(max(1, threads // 2))
+    except (ImportError, AttributeError, RuntimeError, ValueError) as _e:  # pragma: no cover
+        logging.getLogger(__name__).warning("Failed to set torch threading: %s", _e)
 
     req = payload["request"]
-    cfg = GPT2TrainConfig(
-        model_family="gpt2",
+    cfg = ModelTrainConfig(
+        model_family=req["model_family"],
         model_size=req["model_size"],
         max_seq_len=int(req["max_seq_len"]),
         num_epochs=int(req["num_epochs"]),
@@ -61,40 +73,91 @@ def process_train_job(payload: TrainJobPayload) -> None:
         return bool(val == "1")
 
     try:
-        builder = LocalTextDatasetBuilder()
-        # Initial heartbeat to indicate job started
-        import time as _time
-
-        _hb(_time.time())
-        result = train_gpt2(
-            cfg,
-            settings,
-            run_id=run_id,
-            redis_hb=_hb,
-            cancelled=_cancelled,
-            dataset_builder=builder,
-        )
-        if result.cancelled:
-            r.set(f"{STATUS_KEY_PREFIX}{run_id}", "failed")
-            log.info("Training cancelled run_id=%s", run_id)
-            return
-        r.set(f"{STATUS_KEY_PREFIX}{run_id}", "completed")
-        # Per-run structured log
+        # Per-run structured log (attach before training starts)
         logsvc = LoggingService.create()
         run_log_path = str(model_logs_path(settings, run_id))
         per_run_logger = logsvc.attach_run_file(
             path=run_log_path, category="training", service="worker", run_id=run_id
         )
+        # Initial heartbeat and config logging
+        import time as _time
+
+        _hb(_time.time())
         per_run_logger.info(
-            "Training completed",
+            "Training started",
             extra={
-                "event": "train_completed",
+                "event": "train_started",
                 "run_id": run_id,
-                "loss": result.loss,
-                "perplexity": result.perplexity,
-                "steps": result.steps,
+                "model_family": cfg.model_family,
+                "model_size": cfg.model_size,
+                "max_seq_len": cfg.max_seq_len,
+                "num_epochs": cfg.num_epochs,
+                "batch_size": cfg.batch_size,
+                "learning_rate": cfg.learning_rate,
+                "tokenizer_id": cfg.tokenizer_id,
+                "corpus_path": cfg.corpus_path,
+                "steps": 0,
             },
         )
+
+        def _progress(step: int, epoch: int, loss: float) -> None:
+            per_run_logger.info(
+                "Training progress",
+                extra={"event": "train_progress", "run_id": run_id, "steps": step, "loss": loss},
+            )
+
+        # Use model registry for backend selection
+        container = ServiceContainer.from_settings(settings)
+        backend = container.model_registry.get(cfg.model_family)
+        # Prepare model using a tokenizer handle from artifacts
+        tok_dir = os.path.join(settings.app.artifacts_root, "tokenizers", cfg.tokenizer_id)
+        tok_json = os.path.join(tok_dir, "tokenizer.json")
+        tok_spm = os.path.join(tok_dir, "tokenizer.model")
+        if os.path.exists(tok_json):
+            tok_handle = BPEBackend().load(tok_json)
+        elif os.path.exists(tok_spm):
+            tok_handle = SentencePieceBackend().load(tok_spm)
+        else:
+            raise FileNotFoundError(
+                f"Tokenizer artifact not found: expected {tok_json} or {tok_spm}"
+            )
+        prepared = backend.prepare(cfg, settings, tokenizer=tok_handle)
+        result = backend.train(
+            cfg,
+            settings,
+            run_id=run_id,
+            heartbeat=_hb,
+            cancelled=_cancelled,
+            prepared=prepared,
+        )
+        if result.cancelled:
+            # Mark failed on cancellation and do not persist weights
+            r.set(f"{STATUS_KEY_PREFIX}{run_id}", "failed")
+            per_run_logger.info(
+                "Training cancelled",
+                extra={
+                    "event": "train_cancelled",
+                    "run_id": run_id,
+                    "loss": result.loss,
+                    "perplexity": result.perplexity,
+                    "steps": result.steps,
+                },
+            )
+        else:
+            r.set(f"{STATUS_KEY_PREFIX}{run_id}", "completed")
+            # Save weights via backend lifecycle
+            out_dir = str(model_dir(settings, run_id))
+            _ = backend.save(prepared, out_dir)
+            per_run_logger.info(
+                "Training completed",
+                extra={
+                    "event": "train_completed",
+                    "run_id": run_id,
+                    "loss": result.loss,
+                    "perplexity": result.perplexity,
+                    "steps": result.steps,
+                },
+            )
         # Release handler for long-running worker process
         logsvc.close_run_file(path=run_log_path)
     except Exception as e:
@@ -151,11 +214,14 @@ def process_eval_job(payload: EvalJobPayload) -> None:
 
     class _TrainingManifestModel(BaseModel):
         run_id: str
+        model_family: str
+        model_size: str
         epochs: int
         batch_size: int
         max_seq_len: int
         steps: int
         loss: float
+        learning_rate: float
         tokenizer_id: str
         corpus_path: str
         optimizer: str
@@ -168,24 +234,31 @@ def process_eval_job(payload: EvalJobPayload) -> None:
 
     manifest_text = manifest_path.read_text(encoding="utf-8")
     manifest = _TrainingManifestModel.model_validate_json(manifest_text)
-    tokenizer_id = manifest.tokenizer_id  # no fallback
-    max_seq_len = manifest.max_seq_len  # no fallback
-    batch_size = manifest.batch_size  # no fallback
-    corpus_path = manifest.corpus_path  # no fallback
-    cfg = GPT2TrainConfig(
-        model_family="gpt2",
-        model_size="small",
-        max_seq_len=max_seq_len,
-        num_epochs=1,
-        batch_size=batch_size,
-        learning_rate=5e-4,
-        tokenizer_id=tokenizer_id,
-        corpus_path=corpus_path,
+    cfg = ModelTrainConfig(
+        model_family=manifest.model_family,
+        model_size=manifest.model_size,
+        max_seq_len=manifest.max_seq_len,
+        num_epochs=manifest.epochs,
+        batch_size=manifest.batch_size,
+        learning_rate=manifest.learning_rate,
+        tokenizer_id=manifest.tokenizer_id,
+        corpus_path=manifest.corpus_path,
     )
     try:
-        builder = LocalTextDatasetBuilder()
-        res = evaluate_gpt2(run_id=run_id, cfg=cfg, settings=settings, dataset_builder=builder)
-        out = _EvalCacheModel(status="completed", split=split, loss=res.loss, ppl=res.perplexity)
+        container2 = ServiceContainer.from_settings(settings)
+        backend = container2.model_registry.get("gpt2")
+        res = backend.evaluate(run_id=run_id, cfg=cfg, settings=settings)
+        # Persist path to metrics.json as artifact pointer
+        from ..core.infra.paths import model_eval_dir as _model_eval_dir
+
+        artifact_path = str(_model_eval_dir(settings, run_id) / "metrics.json")
+        out = _EvalCacheModel(
+            status="completed",
+            split=split,
+            loss=res.loss,
+            ppl=res.perplexity,
+            artifact=artifact_path,
+        )
     except Exception as e:
         out = _EvalCacheModel(status="failed", split=split, loss=None, ppl=None)
         logging.getLogger(__name__).exception("Eval failed run_id=%s error=%s", run_id, e)

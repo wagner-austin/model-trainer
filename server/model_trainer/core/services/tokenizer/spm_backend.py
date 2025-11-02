@@ -207,3 +207,32 @@ class SentencePieceBackend(_TokenizerBackendProto):
 
     def decode(self: SentencePieceBackend, handle: _TokenizerHandle, ids: list[int]) -> str:
         return handle.decode(ids)
+
+    def inspect(self: SentencePieceBackend, artifact_path: str) -> _TokenizerTrainStats:
+        base = Path(artifact_path)
+        base_dir = base if base.is_dir() else base.parent
+        manifest_path = base_dir / "manifest.json"
+        if not manifest_path.exists():
+            raise RuntimeError(f"manifest not found for tokenizer at {base_dir}")
+
+        class _StatsM(BaseModel):
+            coverage: float
+            oov_rate: float
+            token_count: int
+            char_coverage: float
+
+            model_config = {"extra": "forbid", "validate_assignment": True}
+
+        class _ManifestM(BaseModel):
+            stats: _StatsM
+
+            model_config = {"extra": "forbid", "validate_assignment": True}
+
+        text = manifest_path.read_text(encoding="utf-8")
+        m = _ManifestM.model_validate_json(text)
+        return _TokenizerTrainStats(
+            coverage=m.stats.coverage,
+            oov_rate=m.stats.oov_rate,
+            token_count=m.stats.token_count,
+            char_coverage=m.stats.char_coverage,
+        )

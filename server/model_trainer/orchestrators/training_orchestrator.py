@@ -17,6 +17,7 @@ from ..core.infra.paths import model_logs_path
 from ..core.infra.redis_utils import get_with_retry, set_with_retry
 from ..core.logging.service import LoggingService
 from ..core.services.queue.rq_adapter import RQEnqueuer
+from ..core.services.registries import ModelRegistry
 from ..infra.persistence.models import EvalCache
 from ..infra.storage.run_store import RunStore
 
@@ -38,23 +39,28 @@ class TrainingOrchestrator:
         settings: Settings,
         redis_client: redis.Redis[str],
         enqueuer: RQEnqueuer,
+        model_registry: ModelRegistry | None = None,
     ) -> None:
         self._settings = settings
         self._redis = redis_client
         self._enq = enqueuer
         self._store = RunStore(settings.app.runs_root, settings.app.artifacts_root)
         self._logger = LoggingService.create().adapter(category="orchestrator", service="training")
+        self._models = model_registry
 
     def enqueue_training(self: TrainingOrchestrator, req: TrainRequest) -> EnqueueOut:
-        # Early validation: currently only gpt2 is supported
-        if req.model_family != "gpt2":
-            from ..core.errors.base import AppError, ErrorCode
+        # Early validation via registry if available
+        if self._models is not None:
+            try:
+                _ = self._models.get(req.model_family)
+            except KeyError:
+                from ..core.errors.base import AppError, ErrorCode
 
-            self._logger.info(
-                "unsupported model family",
-                extra={"event": "model_backend_unavailable", "model_family": req.model_family},
-            )
-            raise AppError(ErrorCode.CONFIG_INVALID, "unsupported model family")
+                self._logger.info(
+                    "unsupported model family",
+                    extra={"event": "model_backend_unavailable", "model_family": req.model_family},
+                )
+                raise AppError(ErrorCode.CONFIG_INVALID, "unsupported model family") from None
         run_id = self._store.create_run(req.model_family, req.model_size)
         request_payload: TrainRequestPayload = {
             "model_family": req.model_family,

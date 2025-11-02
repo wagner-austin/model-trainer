@@ -10,7 +10,8 @@ from ..core.config.settings import Settings
 from ..core.contracts.compute import LocalCPUProvider
 from ..core.contracts.queue import TokenizerTrainPayload
 from ..core.contracts.tokenizer import TokenizerTrainConfig
-from ..core.infra.paths import tokenizer_dir
+from ..core.infra.paths import tokenizer_dir, tokenizer_logs_path
+from ..core.logging.service import LoggingService
 from ..core.services.tokenizer.bpe_backend import BPEBackend
 
 
@@ -31,8 +32,25 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
     env = LocalCPUProvider(threads_count=threads).env()
     for k, v in env.items():
         os.environ[k] = v
+    # Disable tokenizer internal parallelism for stable CPU usage
+    os.environ["TOKENIZERS_PARALLELISM"] = "1"
 
     out_dir = str(tokenizer_dir(settings, tok_id))
+    # Attach per-tokenizer log file
+    logsvc = LoggingService.create()
+    tok_log_path = str(tokenizer_logs_path(settings, tok_id))
+    tok_logger = logsvc.attach_run_file(
+        path=tok_log_path, category="tokenizer", service="worker", tokenizer_id=tok_id
+    )
+    tok_logger.info(
+        "Tokenizer job started",
+        extra={
+            "event": "tokenizer_started",
+            "tokenizer_id": tok_id,
+            "method": payload["method"],
+            "vocab_size": int(payload["vocab_size"]),
+        },
+    )
     cfg = TokenizerTrainConfig(
         method=payload["method"],
         vocab_size=payload["vocab_size"],
@@ -59,11 +77,29 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
                 "Unsupported tokenizer method: %s (SentencePiece CLI not available)",
                 payload["method"],
             )
+            tok_logger.info(
+                "Tokenizer backend unavailable",
+                extra={"event": "tokenizer_backend_unavailable", "tokenizer_id": tok_id},
+            )
+            logsvc.close_run_file(path=tok_log_path)
             return
     else:
         r.set(f"tokenizer:{tok_id}:status", "failed")
-        log.error("Unsupported tokenizer method: %s", payload["method"])
+        tok_logger.error("Unsupported tokenizer method: %s", payload["method"])
+        logsvc.close_run_file(path=tok_log_path)
         return
     r.set(f"tokenizer:{tok_id}:status", "completed")
     r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
-    log.info("Tokenizer training completed id=%s out=%s", tok_id, out_dir)
+    tok_logger.info(
+        "Tokenizer training completed",
+        extra={
+            "event": "tokenizer_completed",
+            "tokenizer_id": tok_id,
+            "vocab_size": int(payload["vocab_size"]),
+            "coverage": float(stats.coverage),
+            "oov_rate": float(stats.oov_rate),
+            "token_count": int(stats.token_count),
+            "char_coverage": float(stats.char_coverage),
+        },
+    )
+    logsvc.close_run_file(path=tok_log_path)

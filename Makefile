@@ -28,7 +28,7 @@ guards:
 	python .\scripts\guard.py
 
 test:
-	if (Test-Path "$(PY_DIR)\pyproject.toml") { Write-Host "[test-python] pytest" -ForegroundColor Cyan; Push-Location "$(PY_DIR)"; poetry run pytest -q; Pop-Location; } else { Write-Host "[test-python] Skipped: $(PY_DIR) not initialized" -ForegroundColor Yellow; }
+	if (Test-Path "$(PY_DIR)\pyproject.toml") { Write-Host "[test-python] pytest with coverage" -ForegroundColor Cyan; Push-Location "$(PY_DIR)"; poetry run pytest --cov=model_trainer --cov-report=term-missing -v; Pop-Location; } else { Write-Host "[test-python] Skipped: $(PY_DIR) not initialized" -ForegroundColor Yellow; }
 
 # Run lint then tests without recursive make chatter
 check: lint test

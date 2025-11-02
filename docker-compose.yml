@@ -2,6 +2,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: model-trainer-redis
+    profiles: ["dev", "prod"]
     ports:
       - "6379:6379"
     volumes:
@@ -18,6 +19,7 @@ services:
     build: ./server
     image: model-trainer-api:latest
     container_name: model-trainer-api
+    profiles: ["dev", "prod"]
     env_file:
       - .env
     environment:
@@ -25,6 +27,7 @@ services:
       - HF_HOME=/hf-cache
     volumes:
       - ./artifacts:/data/artifacts
+      - ./corpus:/data/corpus:ro
       - ./runs:/data/runs
       - ./logs:/data/logs
       - hf-cache:/hf-cache
@@ -46,6 +49,7 @@ services:
     build: ./server
     image: model-trainer-api:latest
     container_name: model-trainer-worker
+    profiles: ["dev", "prod"]
     command: ["poetry", "run", "rq", "worker", "training", "--with-scheduler"]
     env_file:
       - .env
@@ -54,6 +58,7 @@ services:
       - HF_HOME=/hf-cache
     volumes:
       - ./artifacts:/data/artifacts
+      - ./corpus:/data/corpus:ro
       - ./runs:/data/runs
       - ./logs:/data/logs
       - hf-cache:/hf-cache

@@ -54,3 +54,11 @@ checkpoints/
 
 # Allow source code under services/data
 !server/model_trainer/core/services/data/
+
+# Artifacts and runs (generated at runtime)
+/artifacts/
+/runs/
+/corpus/
+
+# Windows reserved path that can sometimes appear due to tooling
+server/nul

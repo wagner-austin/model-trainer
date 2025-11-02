@@ -6,12 +6,13 @@ from pathlib import Path
 from model_trainer.core.config.settings import Settings
 from model_trainer.core.contracts.tokenizer import TokenizerTrainConfig
 from model_trainer.core.services.dataset.local_text_builder import LocalTextDatasetBuilder
-from model_trainer.core.services.tokenizer.bpe_backend import BPEBackend
-from model_trainer.core.services.training.gpt2_backend import (
+from model_trainer.core.services.model.backends.gpt2 import (
     GPT2TrainConfig,
     evaluate_gpt2,
-    train_gpt2,
+    prepare_gpt2_with_handle,
+    train_prepared_gpt2,
 )
+from model_trainer.core.services.tokenizer.bpe_backend import BPEBackend
 from pydantic import BaseModel
 
 
@@ -37,7 +38,7 @@ def test_training_and_eval_tiny(tmp_path: Path, monkeypatch: object) -> None:
     )
     _ = BPEBackend().train(cfg_tok)
 
-    # Train tiny model
+    # Prepare tiny model
     cfg = GPT2TrainConfig(
         model_family="gpt2",
         model_size="small",
@@ -56,13 +57,17 @@ def test_training_and_eval_tiny(tmp_path: Path, monkeypatch: object) -> None:
         return False
 
     builder = LocalTextDatasetBuilder()
-    res = train_gpt2(
+    # Load tokenizer handle and prepare model
+
+    tok_handle = BPEBackend().load(str(out_dir / "tokenizer.json"))
+    prepared = prepare_gpt2_with_handle(tok_handle, cfg)
+    res = train_prepared_gpt2(
+        prepared,
         cfg,
         settings,
         run_id="run-test",
         redis_hb=_hb,
         cancelled=_cancelled,
-        dataset_builder=builder,
     )
     assert res.loss >= 0.0
     # Manifest written

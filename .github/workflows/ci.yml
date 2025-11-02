@@ -20,7 +20,7 @@ jobs:
         working-directory: server
         run: |
           poetry lock
-          poetry sync --with dev
+          poetry install --with dev --no-interaction --no-ansi --sync
       - name: Ruff
         working-directory: server
         run: poetry run ruff check . --output-format=github
@@ -35,4 +35,3 @@ jobs:
       - name: Tests
         working-directory: server
         run: poetry run pytest -q
-

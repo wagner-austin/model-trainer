@@ -44,7 +44,7 @@ class TrainingOrchestrator:
         self._settings = settings
         self._redis = redis_client
         self._enq = enqueuer
-        self._store = RunStore(settings.app.runs_root, settings.app.artifacts_root)
+        self._store = RunStore(settings.app.artifacts_root)
         self._logger = LoggingService.create().adapter(category="orchestrator", service="training")
         self._models = model_registry
 

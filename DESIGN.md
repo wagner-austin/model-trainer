@@ -2,16 +2,16 @@
 
 ## 1. Vision & Goals
 
-A modular, robust, and strictly typed system to train and evaluate language models (starting with GPT‑2, LLaMA, and Qwen) and tokenizers (e.g., BPE, SentencePiece) on CPU-only laptops. The system exposes a simple web UI, follows standardized contracts, and emphasizes reliability, observability, and maintainability. It supports multi-threaded CPU execution for dataset preparation and tokenization, with a future path to cloud compute while remaining fully functional locally.
+A modular, robust, and strictly typed system to train and evaluate language models (MVP: GPT‑2) and tokenizers (BPE, with optional SentencePiece) on CPU-only laptops. The system is API‑first today; a simple web UI is planned but not yet present in the repository. It emphasizes reliability, observability, and maintainability. It supports multi-threaded CPU execution for dataset preparation and tokenization, with a future path to cloud compute while remaining fully functional locally.
 
 ### Primary Goals
-- Pluggable model backends (GPT‑2, LLaMA, Qwen) via a standard contract.
-- Pluggable tokenizer backends (BPE, SentencePiece) via a standard contract.
+- Pluggable model backends via a standard contract (GPT‑2 implemented; LLaMA, Qwen planned).
+- Pluggable tokenizer backends via a standard contract (BPE implemented; SentencePiece optional when binaries are available).
 - CPU-first operation with multi-threaded preprocessing/tokenization.
 - Strict typing end-to-end; no `Any`, no casts.
 - Centralized, categorized, structured logging; zero silent exceptions.
 - Explicit dependency injection via a service container.
-- Simple web UI for end-to-end training control and monitoring.
+- Simple web UI for end-to-end training control and monitoring (planned).
 - Deterministic, reproducible runs with clear artifacts and manifests.
 
 ### Non-Goals (Initial MVP)
@@ -24,22 +24,61 @@ A modular, robust, and strictly typed system to train and evaluate language mode
 - Model weight access for certain families (e.g., LLaMA) may require gated download.
 - Avoid vendor lock-in. Cloud is optional and deferred.
 
+## 1.1 Current Implementation Snapshot (MVP)
+
+- API-first system (FastAPI) exposing tokenizers, runs, artifacts, and health endpoints.
+- Tokenizers: BPE implemented; SentencePiece optional if `spm_*` binaries are available.
+- Models: GPT‑2 backend implemented (tiny/small CPU configurations) with train and eval.
+- Orchestrators: enqueue training/eval and attach per‑run log files.
+- Workers: RQ worker performs training/eval, emits heartbeats, handles cancellation.
+- Storage: all run manifests and logs live under `artifacts/models/<run_id>/`.
+
+## 1.2 Project Structure (Current)
+
+```
+server/
+  model_trainer/
+    api/
+      main.py
+      routes/
+        artifacts.py, health.py, runs.py, tokenizers.py
+      schemas/
+    core/
+      config/settings.py
+      contracts/
+      errors/handlers.py
+      infra/paths.py, redis_utils.py
+      logging/service.py, setup.py, types.py
+      services/
+        container.py
+        dataset/
+        model/backends/
+        queue/rq_adapter.py
+        tokenizer/bpe_backend.py, spm_backend.py (optional)
+    infra/
+      storage/run_store.py
+      persistence/
+    orchestrators/
+      training_orchestrator.py, tokenizer_orchestrator.py
+    worker/
+      training_worker.py
+    tests/
+```
+
 
 ## 2. User Flow (MVP)
-1. Select a model backend (e.g., GPT‑2 Small) and version.
+1. Select a model backend (e.g., GPT‑2 Small) and version (via API).
 2. Select a tokenizer backend (e.g., BPE) and configure vocab size.
 3. Point to a cleaned text corpus path; configure holdout split for tokenizer and validation.
-4. Train tokenizer on training split; validate on holdout (OOV rate, coverage, basic stats).
-5. Train model on CPU with basic metrics (loss, perplexity); periodic checkpoints.
-6. Monitor logs and progress in UI; view run summary and artifacts.
-7. Export artifacts (tokenizer files, checkpoints, training manifest).
+4. Train tokenizer; validate on holdout (coverage, OOV rate, basic stats).
+5. Train model on CPU with basic metrics (loss, perplexity).
+6. Monitor logs and progress via API endpoints; view run summary and artifacts.
+7. Export artifacts (tokenizer files, checkpoints, training manifest) from `artifacts/`.
 
 
 ## 3. High-Level Architecture
 
-- UI (Web, TypeScript):
-  - Simple forms and dashboards; interacts with API via JSON.
-  - Strict TypeScript (`strict: true`, no implicit `any`, no casts).
+- UI (Web, TypeScript): planned; interacts with API via JSON.
 - API Server (Python, FastAPI):
   - Exposes training runs, tokenizer building, model selection, and artifact browsing.
   - Hosts orchestrators that call core services via DI container.
@@ -51,11 +90,11 @@ A modular, robust, and strictly typed system to train and evaluate language mode
   - Logging service (centralized JSON logging with categories).
   - Error service (typed errors, standardized error codes, global handlers).
 - Adapters / Backends:
-  - Model backends: GPT‑2 (Transformers), LLaMA (Transformers), Qwen (Transformers).
-  - Tokenizer backends: Hugging Face Tokenizers (BPE), SentencePiece (Unigram/BPE).
+  - Model backends: GPT‑2 (Transformers) implemented; LLaMA/Qwen planned (unavailable placeholders present).
+  - Tokenizer backends: Hugging Face Tokenizers (BPE) implemented; SentencePiece optional (requires `spm_*` binaries).
 - Storage & Artifacts:
-  - Local directory structure for data, runs, models, tokenizers, and logs.
-  - Run manifest for reproducibility (config, versions, seeds, metrics).
+  - Local directory structure for artifacts (tokenizers, models) and per‑run logs under `artifacts/`.
+  - Per‑run manifest for reproducibility at `artifacts/models/<run_id>/manifest.json`.
 
 
 ## 4. Technology Choices
@@ -67,8 +106,7 @@ A modular, robust, and strictly typed system to train and evaluate language mode
   - Hugging Face: Transformers, Datasets, Tokenizers.
   - PyTorch (CPU) for training; CPU threading configured explicitly.
   - Ruff + mypy in pre-commit; black/ruff format if adopted by repo.
-- Language (UI): TypeScript (strict) + React/Vite
-  - ESLint/Prettier, full strictness (`noImplicitAny`, `exactOptionalPropertyTypes`).
+- Language (UI): planned; not yet implemented.
 - Logging: Python `logging` or `structlog` with JSON handlers and standardized fields.
 - Testing: pytest + mypy; Playwright or Cypress optional for UI later.
 - Queue: Redis + RQ (via `redis-py`) for durable training jobs and status updates.
@@ -205,7 +243,7 @@ Benefits:
   - `timestamp`, `level`, `category`, `service`, `event`, `message`, `run_id`, `context`, `error_code` (if applicable).
 - Categories: `core`, `api`, `data`, `tokenizer`, `model`, `training`, `compute`, `ui`.
 - Output sinks:
-  - Console (dev-friendly), rotating file per run (`runs/<id>/logs.jsonl`).
+  - Console (dev-friendly), per-run file at `artifacts/models/<id>/logs.jsonl`.
 - Logging policy:
   - No prints in code; only logger.
   - Include progress markers (e.g., epochs, steps, evals).
@@ -262,24 +300,23 @@ Policy (enforced by guard):
 
 Directory layout (local):
 ```
-.data/               # optional cache
-corpus/              # user-provided corpus root
+corpus/              # user-provided corpus root (mounted read-only in containers)
 artifacts/
   tokenizers/
     <tokenizer_id>/
-      tokenizer.json | sp.model
-      manifest.json
-  models/
-    <run_id>/
-      checkpoints/
-      config.json
+      tokenizer.json | tokenizer.model
       manifest.json
       logs.jsonl
-runs/
-  <run_id>/          # links to artifacts and logs
-logs/
-  app.log.jsonl
+  models/
+    <run_id>/
+      manifest.json
+      logs.jsonl
+      eval/
+        metrics.json
 ```
+
+Notes:
+- There is no separate runtime `runs/` directory; per‑run manifests and logs live under `artifacts/models/<run_id>/`.
 
 
 ## 14. API Surface (MVP)
@@ -288,7 +325,8 @@ logs/
 - `GET /tokenizers/:id` — get tokenizer info/stats
 - `POST /runs/train` — start model training
 - `GET /runs/:id` — get run status/metrics
-- `GET /runs/:id/logs` — stream logs
+- `GET /runs/:id/logs` — tail per‑run logs
+- `GET /runs/:id/logs/stream` — SSE stream of logs
 - `GET /artifacts/:kind/:id` — download artifact
 - `GET /healthz` — lightweight health
 - `GET /readyz` — dependency readiness (e.g., Redis reachable)
@@ -507,8 +545,8 @@ Retry & failure semantics:
 - Persist failure classification and last exception in the run manifest; log with `error_code`.
 
 Heartbeats & cancellation:
-- Worker emits heartbeats to Redis key `runs:<id>:heartbeat` every `HEARTBEAT_INTERVAL_SECONDS` (default 30s).
-- Cancellation flag stored at `runs:<id>:cancelled` and checked between steps/batches.
+- Worker emits heartbeats to Redis key `runs:hb:<id>`.
+- Status key: `runs:status:<id>`; cancellation flag: `runs:<id>:cancelled`.
 
 ## 27. Compose Profiles & Commands (Planned)
 

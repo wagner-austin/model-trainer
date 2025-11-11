@@ -1,0 +1,33 @@
+# Global ignores for Docker build context (root context on Railway)
+
+# Git and CI
+.git
+.github
+
+# Env files
+.env
+.env.*
+
+# Python caches
+**/__pycache__/
+**/*.py[cod]
+server/.mypy_cache/
+server/.pytest_cache/
+server/.ruff_cache/
+
+# Local venvs
+server/.venv/
+
+# Tests and coverage (not needed at runtime)
+server/tests/
+server/.coverage
+
+# Project-local data dirs (mounted at runtime instead)
+artifacts/
+runs/
+logs/
+
+# Misc tools not required at runtime
+tools/
+scripts/
+ui/

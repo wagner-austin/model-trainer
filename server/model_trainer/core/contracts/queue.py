@@ -17,6 +17,7 @@ class TrainRequestPayload(TypedDict):
 class TrainJobPayload(TypedDict):
     run_id: str
     request: TrainRequestPayload
+    user_id: int
 
 
 class EvalJobPayload(TypedDict):

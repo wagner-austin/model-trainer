@@ -1,0 +1,19 @@
+# Railway configuration (Docker builder)
+
+[build]
+builder = "dockerfile"
+dockerfilePath = "server/Dockerfile"
+
+[deploy]
+# Healthcheck path for API services (worker services can leave this unused)
+healthcheckPath = "/readyz"
+# Intentionally omit startCommand to use the Dockerfile's CMD.
+
+[variables]
+APP__ARTIFACTS_ROOT = "/data/artifacts"
+APP__RUNS_ROOT = "/data/runs"
+APP__LOGS_ROOT = "/data/logs"
+HF_HOME = "/hf-cache"
+
+# Note: This repo has multi-stage Dockerfile with targets `api` and `worker`.
+# Set the build target per Railway service in the UI to `api` or `worker`.

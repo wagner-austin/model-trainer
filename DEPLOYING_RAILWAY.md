@@ -1,0 +1,58 @@
+Deploying to Railway (Docker)
+
+Overview
+- This repo is already containerized via `server/Dockerfile` (multi-stage) and uses FastAPI + RQ.
+- We deploy two services from the same repo using Docker build stages: `api` and `worker`.
+- Redis is provided by Railway's Redis plugin; artifacts and logs persist on a mounted volume at `/data`.
+
+Prereqs
+- Railway project created and connected to this GitHub repo.
+- Redis plugin added to the project.
+
+Service: API (model-trainer-api)
+- Builder: Dockerfile
+- Dockerfile Path: `server/Dockerfile`
+- Build Target/Stage: `api`
+- Exposed Port: Use platform default; image now respects `$PORT` (falls back to 8000).
+- Healthcheck Path: `/readyz`
+- Environment Variables:
+  - `REDIS_URL` = Use Redis plugin provided URL
+  - `APP__ARTIFACTS_ROOT` = `/data/artifacts`
+  - `APP__RUNS_ROOT` = `/data/runs`
+  - `APP__LOGS_ROOT` = `/data/logs`
+  - `HF_HOME` = `/hf-cache` (optional for tokenizer/model cache)
+  - Optional: `SECURITY__API_KEY` = `<your-secret>` (send `X-API-Key` header on requests)
+- Persistent Volumes:
+  - Mount a Railway Volume at `/data`
+  - Optionally mount another at `/hf-cache`
+
+Service: Worker (model-trainer-worker)
+- Builder: Dockerfile
+- Dockerfile Path: `server/Dockerfile`
+- Build Target/Stage: `worker`
+- Command: leave empty (Dockerfile `CMD` runs RQ worker)
+- Environment + Volumes: same as API (especially `REDIS_URL` and `/data` mount)
+
+Notes on Reliability and Drift
+- Single source of truth for container logic is `server/Dockerfile`.
+- API stage binds to `$PORT` (see `server/Dockerfile: api CMD`) to work on Railway and similar platforms.
+- Strict typing and guard rails are enforced in CI/local via:
+  - `mypy --strict`, `ruff` and `scripts/guard.py` (no `Any`, no casts, no `type: ignore`).
+  - Run `make check` locally to reproduce CI checks.
+- Tests (`server/tests`) provide broad unit/integration coverage with `--cov-branch`.
+
+Local Validation
+- `copy .env.example .env`
+- `make start` to run Redis, API, and Worker locally via Docker Compose.
+- Health: `GET http://localhost:8000/readyz`
+- Run checks: `make check` (ruff + mypy + guard + pytest with branch coverage)
+
+API Quick Reference
+- Health: `GET /healthz`, `GET /readyz`
+- Tokenizers: `POST /tokenizers/train`, `GET /tokenizers/{id}`
+- Training Runs: `POST /runs/train`, `GET /runs/{id}`, `POST /runs/{id}/evaluate`, `GET /runs/{id}/eval`
+- Logs: `GET /runs/{id}/logs` and `/runs/{id}/logs/stream`
+
+Security
+- If `SECURITY__API_KEY` is set, all endpoints require header: `X-API-Key: <value>`.
+

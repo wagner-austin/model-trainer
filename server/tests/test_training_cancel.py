@@ -53,6 +53,7 @@ def test_training_cancellation_with_redis(tmp_path: Path, monkeypatch: MonkeyPat
     run_id = "run-cancel"
     payload = {
         "run_id": run_id,
+        "user_id": 1,
         "request": {
             "model_family": "gpt2",
             "model_size": "small",

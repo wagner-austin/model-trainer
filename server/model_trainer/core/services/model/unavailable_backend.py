@@ -52,6 +52,7 @@ class UnavailableBackend(ModelBackend):
         heartbeat: Callable[[float], None],
         cancelled: Callable[[], bool],
         prepared: PreparedModel,
+        progress: Callable[[int, int, float], None] | None = None,
     ) -> TrainOutcome:
         raise AppError(ErrorCode.CONFIG_INVALID, f"model backend unavailable: {self._name}")
 

@@ -76,6 +76,7 @@ class GPT2BackendImpl(ModelBackend):
         heartbeat: Callable[[float], None],
         cancelled: Callable[[], bool],
         prepared: PreparedModel,
+        progress: Callable[[int, int, float], None] | None = None,
     ) -> TrainOutcome:
         if not isinstance(prepared, GPT2Prepared):
             raise TypeError("Unsupported prepared model type for GPT-2 backend")
@@ -95,6 +96,7 @@ class GPT2BackendImpl(ModelBackend):
             run_id=run_id,
             redis_hb=heartbeat,
             cancelled=cancelled,
+            progress=progress,
         )
         return TrainOutcome(
             loss=out.loss,

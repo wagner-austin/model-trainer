@@ -14,6 +14,7 @@ class TrainRequest(BaseModel):
     learning_rate: Annotated[float, Field(default=5e-4, gt=0)]
     corpus_path: Annotated[str, Field(description="Path to text corpus root or file")]
     tokenizer_id: Annotated[str, Field(description="Tokenizer artifact ID to use")]
+    user_id: Annotated[int, Field(default=0, description="Discord user ID for DM updates", ge=0)]
 
     model_config = {"extra": "forbid", "validate_assignment": True}
 

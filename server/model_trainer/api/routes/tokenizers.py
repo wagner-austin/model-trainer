@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.params import Depends as DependsParamType
 
 from ...core.logging.types import LoggingExtra
 from ...core.services.container import ServiceContainer
+from ..middleware import api_key_dependency
 from ..schemas.tokenizers import (
     TokenizerInfoResponse,
     TokenizerTrainRequest,
@@ -12,7 +14,8 @@ from ..schemas.tokenizers import (
 
 
 def build_router(container: ServiceContainer) -> APIRouter:
-    router = APIRouter()
+    api_dep: DependsParamType = Depends(api_key_dependency(container.settings))
+    router = APIRouter(dependencies=[api_dep])
 
     def start_tokenizer_training(req: TokenizerTrainRequest) -> TokenizerTrainResponse:
         orchestrator = container.tokenizer_orchestrator

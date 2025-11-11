@@ -1,0 +1,21 @@
+{
+  "name": "Model Trainer (API + Worker)",
+  "description": "FastAPI training service with RQ worker and Redis events",
+  "plugins": ["redis"],
+  "services": [
+    {
+      "name": "api",
+      "startCommand": "poetry run uvicorn model_trainer.api.main:create_app --factory --host 0.0.0.0 --port 8000",
+      "env": {
+        "APP__ARTIFACTS_ROOT": "/data/artifacts",
+        "APP__RUNS_ROOT": "/data/runs",
+        "APP__LOGS_ROOT": "/data/logs"
+      }
+    },
+    {
+      "name": "worker",
+      "startCommand": "poetry run rq worker training --with-scheduler"
+    }
+  ]
+}
+

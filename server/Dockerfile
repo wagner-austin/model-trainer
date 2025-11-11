@@ -19,9 +19,9 @@ COPY . .
 # API image
 FROM base AS api
 EXPOSE 8000
-CMD ["poetry", "run", "uvicorn", "model_trainer.api.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
+# Respect platform-provided PORT (Railway, Render, Heroku, etc.) with a sane default
+CMD ["/bin/sh", "-lc", "poetry run uvicorn model_trainer.api.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]
 
 # Worker image
 FROM base AS worker
 CMD ["poetry", "run", "rq", "worker", "training", "--with-scheduler"]
-

@@ -70,6 +70,7 @@ class ModelBackend(Protocol):
         heartbeat: Callable[[float], None],
         cancelled: Callable[[], bool],
         prepared: PreparedModel,
+        progress: Callable[[int, int, float], None] | None = None,
     ) -> TrainOutcome: ...
     def evaluate(
         self: ModelBackend, *, run_id: str, cfg: ModelTrainConfig, settings: Settings

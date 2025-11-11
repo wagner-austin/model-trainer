@@ -43,8 +43,8 @@ DiscordBot Wiring
 - Slash `/train_model` command enqueues training and confirms with run/job IDs.
 
 Railway
-- Two services: `api` (uvicorn) and `worker` (rq worker), plugin: `redis` — see `Model-Trainer/railway.json`.
-- Ensure processes start in `server/` (set per-service rootDirectory if supported, or prefix `cd server && ...`).
+- Two services: `api` (uvicorn) and `worker` (rq worker), plugin: `redis` — see `Model-Trainer/DEPLOYING_RAILWAY.md`.
+- Use Docker builder with `server/Dockerfile` build targets: `api` and `worker`.
 - Env: `REDIS_URL`, `SECURITY__API_KEY`, `APP__ARTIFACTS_ROOT`, `APP__RUNS_ROOT`, `APP__LOGS_ROOT`.
 
 Quality Bar
@@ -54,4 +54,3 @@ Quality Bar
 Open Items (tracked)
 - Optional metrics in progress events (throughput/memory).
 - Calibrator integration to compute optimal threads/workers and reflect in `started` events.
-

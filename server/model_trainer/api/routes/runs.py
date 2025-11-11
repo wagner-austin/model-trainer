@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import os
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.params import Depends as DependsParamType
 from fastapi.responses import PlainTextResponse, StreamingResponse
 
 from ...core.infra.paths import model_logs_path
 from ...core.logging.types import LoggingExtra
 from ...core.services.container import ServiceContainer
+from ..middleware import api_key_dependency
 from ..schemas.runs import (
     CancelResponse,
     EvaluateRequest,
@@ -22,9 +24,19 @@ from ..schemas.runs import (
 
 class _RunsRoutes:
     c: ServiceContainer
+    # Test seam: injectable sleep to make streaming deterministic
+    _sleep_fn: Callable[[float], None]
+    _follow_max_loops: int | None
 
     def __init__(self: _RunsRoutes, container: ServiceContainer) -> None:
         self.c = container
+        # Defaults (production): real time.sleep, unlimited follow
+        # These can be overridden in tests to avoid non-deterministic sleeps
+        import time as _time  # local import to avoid top-level import side effects
+
+        self._sleep_fn = _time.sleep
+
+        self._follow_max_loops = None
 
     def start_training(self: _RunsRoutes, req: TrainRequest) -> TrainResponse:
         orchestrator = self.c.training_orchestrator
@@ -73,6 +85,39 @@ class _RunsRoutes:
         except OSError:
             raise HTTPException(status_code=500, detail="failed to read logs") from None
 
+    def _sse_iter(self: _RunsRoutes, path: str, tail: int, follow: bool) -> Iterator[bytes]:
+        sse_logger = self.c.logging.adapter(category="api", service="runs", run_id=None)
+        try:
+            # Emit last `tail` lines immediately
+            with open(path, "rb") as f:
+                last: deque[bytes] = deque(maxlen=max(1, int(tail)))
+                for line in f:
+                    last.append(line)
+            for line in last:
+                yield b"data: " + line.rstrip(b"\n") + b"\n\n"
+            if not follow:
+                return
+            # Follow the file
+            with open(path, "rb") as f2:
+                f2.seek(0, os.SEEK_END)
+                loops = 0
+                while True:
+                    chunk = f2.readline()
+                    if chunk:
+                        yield b"data: " + chunk.rstrip(b"\n") + b"\n\n"
+                    else:
+                        self._sleep_fn(0.5)
+                        if self._follow_max_loops is not None:
+                            loops += 1
+                            if loops >= self._follow_max_loops:
+                                return
+        except OSError as e:
+            sse_logger.error(
+                "SSE file read error",
+                extra={"event": "runs_logs_stream_error", "reason": str(e)},
+            )
+            return
+
     def run_logs_stream(
         self: _RunsRoutes,
         run_id: str,
@@ -82,47 +127,13 @@ class _RunsRoutes:
         path = str(model_logs_path(self.c.settings, run_id))
         if not os.path.exists(path):
             raise HTTPException(status_code=404, detail="logs not found")
-
         sse_logger = self.c.logging.adapter(category="api", service="runs", run_id=run_id)
-
-        def _iter_sse_lines() -> Iterator[bytes]:
-            try:
-                # Emit last `tail` lines immediately
-                with open(path, "rb") as f:
-                    last: deque[bytes] = deque(maxlen=max(1, int(tail)))
-                    for line in f:
-                        last.append(line)
-                for line in last:
-                    yield b"data: " + line.rstrip(b"\n") + b"\n\n"
-                if not follow:
-                    return
-                # Follow the file
-                with open(path, "rb") as f2:
-                    f2.seek(0, os.SEEK_END)
-                    while True:
-                        chunk = f2.readline()
-                        if chunk:
-                            yield b"data: " + chunk.rstrip(b"\n") + b"\n\n"
-                        else:
-                            # Sleep a bit to avoid busy wait
-                            import time as _time
-
-                            _time.sleep(0.5)
-            except OSError as e:
-                # Log and stop streaming on file errors
-                sse_logger.error(
-                    "SSE file read error",
-                    extra={
-                        "event": "runs_logs_stream_error",
-                        "reason": str(e),
-                    },
-                )
-                return
-
         headers = {"Cache-Control": "no-cache"}
         extra4: LoggingExtra = {"event": "runs_logs_stream", "tail": max(1, int(tail))}
         sse_logger.info("runs logs stream", extra=extra4)
-        return StreamingResponse(_iter_sse_lines(), media_type="text/event-stream", headers=headers)
+        return StreamingResponse(
+            self._sse_iter(path, tail, follow), media_type="text/event-stream", headers=headers
+        )
 
     def cancel_run(self: _RunsRoutes, run_id: str) -> CancelResponse:
         r = self.c.redis
@@ -135,7 +146,9 @@ class _RunsRoutes:
 
 
 def build_router(container: ServiceContainer) -> APIRouter:
-    router = APIRouter()
+    # Require API key for all routes under /runs
+    api_dep: DependsParamType = Depends(api_key_dependency(container.settings))
+    router = APIRouter(dependencies=[api_dep])
     h = _RunsRoutes(container)
     router.add_api_route(
         "/train",

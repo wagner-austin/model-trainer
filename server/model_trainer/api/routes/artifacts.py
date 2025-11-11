@@ -4,13 +4,15 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.params import Depends as DependsParamType
 from fastapi.responses import FileResponse, StreamingResponse
 
 from ...core.config.settings import Settings
 from ...core.infra.paths import artifacts_root
 from ...core.logging.types import LoggingExtra
 from ...core.services.container import ServiceContainer
+from ..middleware import api_key_dependency
 from ..schemas.artifacts import ArtifactListResponse
 
 
@@ -117,7 +119,8 @@ def _full_file_response(target: Path) -> FileResponse:
 
 
 def build_router(container: ServiceContainer) -> APIRouter:
-    router = APIRouter()
+    api_dep: DependsParamType = Depends(api_key_dependency(container.settings))
+    router = APIRouter(dependencies=[api_dep])
     settings: Settings = container.settings
 
     def list_artifacts(kind: Literal["tokenizers", "models"], item_id: str) -> ArtifactListResponse:

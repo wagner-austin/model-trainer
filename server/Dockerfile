@@ -10,11 +10,14 @@ RUN pip install --no-cache-dir poetry==${POETRY_VERSION}
 
 WORKDIR /app
 
-COPY pyproject.toml poetry.lock ./
+# When building with repository root as context (e.g., Railway),
+# copy lockfiles from the server/ directory explicitly for caching.
+COPY server/pyproject.toml server/poetry.lock ./
 RUN poetry config virtualenvs.create false \
     && poetry install --only main --no-interaction --no-ansi
 
-COPY . .
+# Copy only the server/ sources into the image workdir
+COPY server/ .
 
 # API image
 FROM base AS api

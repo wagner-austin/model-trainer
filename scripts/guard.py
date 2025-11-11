@@ -42,6 +42,10 @@ PATTERNS: dict[str, re.Pattern[str]] = {
     "print()": re.compile(r"(^|\s)print\s*\("),
     # Frozen dataclasses are discouraged (harder to monkeypatch/tests)
     "dataclass(frozen=True)": re.compile(r"@dataclass\(\s*frozen\s*=\s*True\s*\)"),
+    # Disallow ad-hoc global logging config; use central logging setup
+    "logging.basicConfig": re.compile(r"\blogging\.basicConfig\s*\("),
+    # Disallow noqa suppressions in code/tests to keep lints actionable
+    "noqa": re.compile(r"#\s*noqa\b"),
 }
 
 

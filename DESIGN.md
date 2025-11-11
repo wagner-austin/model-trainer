@@ -30,7 +30,7 @@ A modular, robust, and strictly typed system to train and evaluate language mode
 - Tokenizers: BPE implemented; SentencePiece optional if `spm_*` binaries are available.
 - Models: GPT‑2 backend implemented (tiny/small CPU configurations) with train and eval.
 - Orchestrators: enqueue training/eval and attach per‑run log files.
-- Workers: RQ worker performs training/eval, emits heartbeats, handles cancellation.
+- Workers: RQ worker performs training/eval, emits heartbeats, handles cancellation, and publishes typed training events to Redis (`trainer:events`).
 - Storage: all run manifests and logs live under `artifacts/models/<run_id>/`.
 
 ## 1.2 Project Structure (Current)
@@ -641,3 +641,27 @@ Testing strategy:
 - Training loop: run a tiny training step on a toy corpus; assert loss decreases between first two evals.
 - Evaluation: compute perplexity on a known toy dataset; verify deterministic results with fixed seeds.
 - Orchestrators: happy-path and error injection verifying error codes and no silent failures.
+
+## 31. Security & Correlation (Implemented)
+
+- Request correlation: middleware sets and echoes `X-Request-ID` for every response.
+- Error bodies: all errors include `code`, `message`, and `request_id` (see `core/errors/handlers.py`).
+- API key auth: if configured, requests must include `X-Api-Key`; invalid/missing key returns HTTP 401 with code `UNAUTHORIZED`.
+
+## 32. Training Events & Discord Integration (Implemented)
+
+- Worker publishes JSON events for training lifecycle to Redis channel `trainer:events`.
+- Event schema: `trainer.train.started.v1`, `trainer.train.progress.v1`, `trainer.train.completed.v1`, `trainer.train.failed.v1` (see `events/trainer.py`).
+- `request_id` equals `run_id` for direct correlation; payload contains `user_id` for Discord DM routing.
+- DiscordBot subscribes and sends rich embeds to users.
+
+## 33. Run Status Messages (Implemented)
+
+- Status keys: `runs:status:<run_id>` and heartbeats `runs:hb:<run_id>`.
+- A human-readable message is stored at `runs:msg:<run_id>` on cancellation/failure/completion and exposed via `GET /runs/{id}` as `message`.
+
+## 34. Railway Deployment Notes
+
+- Services: API (uvicorn) and worker (rq), plus Redis addon.
+- Ensure start commands execute in `server/` (per-service root or `cd server && ...`).
+- Required env: `REDIS_URL`, `SECURITY__API_KEY` (if enforcing auth), and artifacts/log roots.

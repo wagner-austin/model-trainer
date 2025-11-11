@@ -14,7 +14,7 @@ WORKDIR /app
 # copy lockfiles from the server/ directory explicitly for caching.
 COPY server/pyproject.toml server/poetry.lock ./
 RUN poetry config virtualenvs.create false \
-    && poetry install --only main --no-interaction --no-ansi
+    && poetry install --only main --no-interaction --no-ansi --no-root
 
 # Copy only the server/ sources into the image workdir
 COPY server/ .

@@ -86,6 +86,17 @@ class Settings(BaseSettings):
     rq: RQConfig = RQConfig()
     app: AppConfig = AppConfig()
 
+    # Security: mandatory API key for all endpoints
+    class SecurityConfig(BaseSettings):
+        api_key: str = ""
+
+        model_config = {
+            "extra": "forbid",
+            "env_nested_delimiter": "__",
+        }
+
+    security: SecurityConfig = SecurityConfig()
+
     model_config = {
         "env_file": ".env",
         "case_sensitive": False,

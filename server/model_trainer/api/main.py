@@ -8,6 +8,7 @@ from ..core.config.settings import Settings
 from ..core.errors.handlers import install_exception_handlers
 from ..core.logging.setup import setup_logging
 from ..core.services.container import ServiceContainer
+from .middleware import RequestIdMiddleware, api_key_dependency
 from .routes import artifacts, health, runs, tokenizers
 
 
@@ -19,6 +20,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     container = ServiceContainer.from_settings(cfg)
     # Expose container for testability and tooling
     app.state.container = container
+
+    # Middleware: request correlation and strict API key enforcement
+    app.add_middleware(RequestIdMiddleware)
+    # FastAPI dependency for API key (required); attach to routers where appropriate
+    app.state.api_key_dep = api_key_dependency(cfg)
 
     # Routers (container captured in closures)
     app.include_router(health.build_router(container), prefix="")

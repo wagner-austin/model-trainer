@@ -109,6 +109,7 @@ def test_rq_enqueuer_methods(monkeypatch: MonkeyPatch) -> None:
             "corpus_path": "/x",
             "tokenizer_id": "tok",
         },
+        "user_id": 1,
     }
     jid = enq.enqueue_train(train_payload)
     assert jid.startswith("id:train:run-1")

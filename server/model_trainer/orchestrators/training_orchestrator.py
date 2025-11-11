@@ -24,6 +24,7 @@ from ..infra.storage.run_store import RunStore
 HEARTBEAT_KEY_PREFIX: Final[str] = "runs:hb:"
 STATUS_KEY_PREFIX: Final[str] = "runs:status:"
 EVAL_KEY_PREFIX: Final[str] = "runs:eval:"
+MSG_KEY_PREFIX: Final[str] = "runs:msg:"
 
 
 @dataclass
@@ -72,7 +73,11 @@ class TrainingOrchestrator:
             "corpus_path": req.corpus_path,
             "tokenizer_id": req.tokenizer_id,
         }
-        payload: TrainJobPayload = {"run_id": run_id, "request": request_payload}
+        payload: TrainJobPayload = {
+            "run_id": run_id,
+            "request": request_payload,
+            "user_id": int(req.user_id),
+        }
         # Per-run log file
         run_log_path = str(model_logs_path(self._settings, run_id))
         logsvc = LoggingService.create()
@@ -95,7 +100,8 @@ class TrainingOrchestrator:
             raise AppError(ErrorCode.DATA_NOT_FOUND, "run not found")
         hb_raw = get_with_retry(self._redis, f"{HEARTBEAT_KEY_PREFIX}{run_id}")
         hb = float(hb_raw) if hb_raw is not None else None
-        return RunStatusResponse(run_id=run_id, status=status_v, last_heartbeat_ts=hb)
+        msg = get_with_retry(self._redis, f"{MSG_KEY_PREFIX}{run_id}")
+        return RunStatusResponse(run_id=run_id, status=status_v, last_heartbeat_ts=hb, message=msg)
 
     def enqueue_evaluation(
         self: TrainingOrchestrator, run_id: str, req: EvaluateRequest

@@ -1,8 +1,8 @@
 Deploying to Railway (Docker)
 
 Overview
-- This repo is already containerized via `server/Dockerfile` (multi-stage) and uses FastAPI + RQ.
-- We deploy two services from the same repo using Docker build stages: `api` and `worker`.
+- This repo is containerized via a single-stage `server/Dockerfile` (FastAPI + RQ).
+- We deploy two services from the same image with different start commands.
 - Redis is provided by Railway's Redis plugin; artifacts and logs persist on a mounted volume at `/data`.
 
 Prereqs
@@ -12,8 +12,8 @@ Prereqs
 Service: API (model-trainer-api)
 - Builder: Dockerfile
 - Dockerfile Path: `server/Dockerfile`
-- Build Target/Stage: `api`
-- Exposed Port: Use platform default; image now respects `$PORT` (falls back to 8000).
+- Start Command: leave empty (Dockerfile CMD runs Uvicorn and respects `$PORT`)
+- Exposed Port: Use platform default (image honors `$PORT`, defaults 8000)
 - Healthcheck Path: `/readyz`
 - Environment Variables:
   - `REDIS_URL` = Use Redis plugin provided URL
@@ -29,13 +29,12 @@ Service: API (model-trainer-api)
 Service: Worker (model-trainer-worker)
 - Builder: Dockerfile
 - Dockerfile Path: `server/Dockerfile`
-- Build Target/Stage: `worker`
-- Command: leave empty (Dockerfile `CMD` runs RQ worker)
+- Start Command: `/app/.venv/bin/modeltrainer-rq-worker`
 - Environment + Volumes: same as API (especially `REDIS_URL` and `/data` mount)
 
-Notes on Reliability and Drift
+ Notes on Reliability and Drift
 - Single source of truth for container logic is `server/Dockerfile`.
-- API stage binds to `$PORT` (see `server/Dockerfile: api CMD`) to work on Railway and similar platforms.
+- API binds to `$PORT` (see `server/Dockerfile` default CMD) to work on Railway and similar platforms.
 - Strict typing and guard rails are enforced in CI/local via:
   - `mypy --strict`, `ruff` and `scripts/guard.py` (no `Any`, no casts, no `type: ignore`).
   - Run `make check` locally to reproduce CI checks.
@@ -55,4 +54,3 @@ API Quick Reference
 
 Security
 - If `SECURITY__API_KEY` is set, all endpoints require header: `X-API-Key: <value>`.
-

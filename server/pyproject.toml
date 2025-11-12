@@ -9,6 +9,12 @@ description = "Model Trainer API and worker (CPU-first, strict typing, RQ)"
 authors = ["Your Team <team@example.com>"]
 packages = [{ include = "model_trainer" }]
 
+# Prefer CPU-only wheels for PyTorch to reduce image size and avoid CUDA deps in containers
+[[tool.poetry.source]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+priority = "supplemental"
+
 [tool.poetry.dependencies]
 python = "^3.11"
 fastapi = "^0.115.0"
@@ -24,11 +30,8 @@ torch = {version = "^2.4.1", markers = "platform_system != 'Darwin' or platform_
 datasets = "^3.0.1"
 tokenizers = "^0.20.0"
 
-# We will add model libs later during implementation steps
-# transformers = "^4.44.0"
-# torch = "^2.4.0"
-# datasets = "^3.0.0"
-# tokenizers = "^0.19.0"
+# CPU-only Torch to keep containers lean
+torch = {version = "2.4.1+cpu", source = "pytorch-cpu"}
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.2"

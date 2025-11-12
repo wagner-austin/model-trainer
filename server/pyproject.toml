@@ -26,7 +26,6 @@ rq = "^1.16.2"
 python-json-logger = "^3.2.1"
 typing-extensions = "^4.12.2"
 transformers = "^4.45.0"
-torch = {version = "^2.4.1", markers = "platform_system != 'Darwin' or platform_machine != 'arm64'"}
 datasets = "^3.0.1"
 tokenizers = "^0.20.0"
 

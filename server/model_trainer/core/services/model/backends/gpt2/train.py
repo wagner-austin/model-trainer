@@ -12,6 +12,7 @@ import torch
 import torch.nn as nn
 from pydantic import BaseModel
 from torch import Tensor
+from torch.optim.adamw import AdamW
 from torch.utils.data import DataLoader
 
 from model_trainer.core.config.settings import Settings
@@ -111,8 +112,6 @@ def train_prepared_gpt2(
     model.to(device)
 
     # Optimizer
-    from torch.optim import AdamW
-
     optim = AdamW(model.parameters(), lr=cfg.learning_rate)
 
     step = 0

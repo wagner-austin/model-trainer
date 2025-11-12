@@ -72,6 +72,8 @@ class AppConfig(BaseSettings):
     logs_root: str = "/data/logs"
     threads: int = 0  # 0 means auto-detect
     tokenizer_sample_max_lines: int = 10000
+    data_bank_api_url: str = ""
+    data_bank_api_key: str = ""
 
     model_config = {
         "extra": "forbid",

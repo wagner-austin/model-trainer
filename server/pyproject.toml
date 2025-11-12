@@ -22,7 +22,7 @@ uvicorn = {version = "^0.30.0", extras = ["standard"]}
 pydantic = "^2.7.0"
 pydantic-settings = "^2.2.1"
 redis = "^5.0.7"
-rq = "^1.16.2"
+rq = "^2.0.0"
 python-json-logger = "^3.2.1"
 typing-extensions = "^4.12.2"
 transformers = "^4.45.0"

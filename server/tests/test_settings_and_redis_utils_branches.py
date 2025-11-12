@@ -76,3 +76,47 @@ def test_redis_utils_get_exhausts_retries_and_raises() -> None:
     client = _AlwaysFails()
     with pytest.raises(RedisError, match="always fails"):
         get_with_retry(client, "key", attempts=3)
+
+
+def test_redis_utils_get_zero_attempts_returns_none() -> None:
+    class _Noop:
+        def get(self: _Noop, key: str) -> str | None:
+            raise AssertionError("get should not be called when attempts=0")
+
+    out = get_with_retry(_Noop(), "k", attempts=0)
+    assert out is None
+
+
+def test_redis_utils_set_success_first_attempt() -> None:
+    class _Store:
+        def __init__(self: _Store) -> None:
+            self.data: dict[str, str] = {}
+
+        def set(self: _Store, key: str, value: str) -> object:
+            self.data[key] = value
+            return True
+
+    s = _Store()
+    set_with_retry(s, "a", "b", attempts=3)
+    assert s.data.get("a") == "b"
+
+
+def test_redis_utils_get_success_first_attempt() -> None:
+    class _Store:
+        def __init__(self: _Store) -> None:
+            self.data = {"k": "v"}
+
+        def get(self: _Store, key: str) -> str | None:
+            return self.data.get(key)
+
+    out = get_with_retry(_Store(), "k", attempts=3)
+    assert out == "v"
+
+
+def test_redis_utils_set_zero_attempts_noop() -> None:
+    class _NoopSet:
+        def set(self: _NoopSet, key: str, value: str) -> object:
+            raise AssertionError("set should not be called when attempts=0")
+
+    # Should not raise; function returns None
+    set_with_retry(_NoopSet(), "k", "v", attempts=0)

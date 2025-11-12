@@ -71,11 +71,6 @@ def test_readyz_no_worker(monkeypatch: MonkeyPatch) -> None:
 
     monkeypatch.setattr(r, "ping", _pong)
 
-    # Patch rq.Worker.all to return empty list
-    def _no_workers(_: object) -> list[object]:
-        return []
-
-    monkeypatch.setattr("rq.Worker.all", _no_workers)
     client = _build_app(_make_container(s, r))
     res = client.get("/readyz")
     assert res.status_code == 503
@@ -108,10 +103,8 @@ def test_readyz_ready(monkeypatch: MonkeyPatch) -> None:
 
     monkeypatch.setattr(r, "ping", _pong)
 
-    def _some_workers(_: object) -> list[object]:
-        return [object()]
-
-    monkeypatch.setattr("rq.Worker.all", _some_workers)
+    # Simulate presence of one worker in RQ registry set
+    r.sadd("rq:workers", "worker:1")
     client = _build_app(_make_container(s, r))
     res = client.get("/readyz")
     assert res.status_code == 200

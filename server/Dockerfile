@@ -19,13 +19,16 @@ COPY server/pyproject.toml /app/pyproject.toml
 COPY server/poetry.lock /app/poetry.lock
 
 # Install deps (main only) into in-project venv like handwriting-ai
+# Use --no-root here (code not yet copied) to avoid project install error
 RUN poetry config virtualenvs.create true \
  && poetry config virtualenvs.in-project true \
- && poetry lock --no-interaction \
- && poetry install --only main --no-interaction --no-ansi
+ && poetry install --only main --no-interaction --no-ansi --no-root
 
 # Copy the server sources last
 COPY server/ /app/
+
+# Install the project itself so console scripts (modeltrainer-rq-worker) are available
+RUN poetry install --only main --no-interaction --no-ansi
 
 EXPOSE 8000
 

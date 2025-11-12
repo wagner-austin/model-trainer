@@ -44,6 +44,9 @@ types-redis = "^4.6.0.20241004"
 fakeredis = {version = "^2.21.3", extras = ["lua"]}
 pytest-cov = "^7.0.0"
 
+[tool.poetry.scripts]
+modeltrainer-rq-worker = "model_trainer.worker.rq_worker:main"
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

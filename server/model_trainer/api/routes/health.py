@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import redis as _redis
 from fastapi import APIRouter, Response, status
-from rq import Worker as _Worker
 
 from ...core.config.settings import Settings
 from ...core.services.container import ServiceContainer
@@ -33,8 +32,9 @@ def build_router(container: ServiceContainer) -> APIRouter:
                     )
                     return ReadyzResponse(status="degraded", reason="redis no-pong")
                 # Worker presence check: at least one RQ worker registered
-                workers = _Worker.all(client)
-                if len(workers) == 0:
+                # Query the RQ registry set maintained by the worker process
+                scard = int(client.scard("rq:workers"))
+                if scard <= 0:
                     response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
                     container.logging.adapter(category="api", service="health").info(
                         "readyz degraded", extra={"event": "readyz", "reason": "no-worker"}

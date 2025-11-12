@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Final
 
 import redis
@@ -16,6 +17,7 @@ from ..core.contracts.queue import EvalJobPayload, TrainJobPayload, TrainRequest
 from ..core.infra.paths import model_logs_path
 from ..core.infra.redis_utils import get_with_retry, set_with_retry
 from ..core.logging.service import LoggingService
+from ..core.services.data import corpus_fetcher as corpus_fetcher_mod
 from ..core.services.queue.rq_adapter import RQEnqueuer
 from ..core.services.registries import ModelRegistry
 from ..infra.persistence.models import EvalCache
@@ -63,6 +65,27 @@ class TrainingOrchestrator:
                 )
                 raise AppError(ErrorCode.CONFIG_INVALID, "unsupported model family") from None
         run_id = self._store.create_run(req.model_family, req.model_size)
+        # Validate and resolve corpus source (XOR between path and file_id)
+        cp_raw = (req.corpus_path or "").strip() if req.corpus_path is not None else ""
+        cf_raw = (req.corpus_file_id or "").strip() if req.corpus_file_id is not None else ""
+        if (cp_raw == "") == (cf_raw == ""):
+            from ..core.errors.base import AppError, ErrorCode
+
+            raise AppError(
+                ErrorCode.CONFIG_INVALID,
+                "Exactly one of corpus_path or corpus_file_id must be provided",
+            )
+        # Resolve corpus path (support data-bank-api file id)
+        if cf_raw != "":
+            fetcher = corpus_fetcher_mod.CorpusFetcher(
+                api_url=self._settings.app.data_bank_api_url,
+                api_key=self._settings.app.data_bank_api_key,
+                cache_dir=Path(self._settings.app.data_root) / "corpus_cache",
+            )
+            resolved_corpus = str(fetcher.fetch(cf_raw))
+        else:
+            resolved_corpus = cp_raw
+
         request_payload: TrainRequestPayload = {
             "model_family": req.model_family,
             "model_size": req.model_size,
@@ -70,7 +93,7 @@ class TrainingOrchestrator:
             "num_epochs": req.num_epochs,
             "batch_size": req.batch_size,
             "learning_rate": req.learning_rate,
-            "corpus_path": req.corpus_path,
+            "corpus_path": resolved_corpus,
             "tokenizer_id": req.tokenizer_id,
         }
         payload: TrainJobPayload = {

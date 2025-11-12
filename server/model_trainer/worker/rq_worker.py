@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 import os
+import os as _os
+import shutil as _shutil
 import sys
 from typing import Final
 
 import redis
-import rq
 
 from ..core.config.settings import Settings
 from ..core.logging.setup import setup_logging
@@ -26,10 +27,10 @@ def _redis_from_env(url: str) -> redis.Redis[bytes]:
 
 def _assert_redis_ok(conn: redis.Redis[bytes]) -> None:
     try:
-        ok = bool(getattr(conn, "ping", lambda: True)())
-    except Exception as e:  # pragma: no cover - connectivity check only
+        ok = bool(conn.ping())
+    except (redis.exceptions.RedisError, OSError, ValueError) as e:  # pragma: no cover
         logging.getLogger(__name__).warning("redis_ping_failed: %s", e)
-        ok = False
+        raise RuntimeError("Failed to connect to Redis") from e
     if not ok:
         raise RuntimeError("Failed to connect to Redis")
 
@@ -55,28 +56,20 @@ def run() -> int:
     conn = _redis_from_env(url_env)
     _assert_redis_ok(conn)
 
-    # RQ 1.16.x: allow global connection helpers when present
-    push_conn = getattr(rq, "push_connection", None)
-    pop_conn = getattr(rq, "pop_connection", None)
-    if callable(push_conn):
-        push_conn(conn)
-    try:
-        q = rq.Queue(queue_name, connection=conn)
-        w = rq.Worker(queues=[q], connection=conn)
-        success = bool(w.work())
-        return 0 if success else 1
-    finally:
-        if callable(pop_conn):
-            pop_conn()
+    # Handoff to official RQ CLI to keep our code strictly typed without importing rq runtime APIs
+    rq_bin = _shutil.which("rq")
+    if rq_bin is None:
+        raise RuntimeError("rq CLI not found in PATH; ensure RQ is installed in this environment")
+    _os.execvp(rq_bin, ["rq", "worker", queue_name, "--with-scheduler"])  # never returns
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     _ = argv  # reserved for future flags; keep signature stable
     try:
         return run()
-    except Exception as e:
-        logging.getLogger(__name__).exception("worker_failed: %s", e)
-        return 1
+    except KeyboardInterrupt:  # graceful shutdown signal
+        return 130
 
 
 if __name__ == "__main__":  # pragma: no cover - script entry

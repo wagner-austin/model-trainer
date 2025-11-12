@@ -5,8 +5,6 @@ builder = "dockerfile"
 dockerfilePath = "server/Dockerfile"
 
 [deploy]
-# Healthcheck path for API services (worker services can leave this unused)
-healthcheckPath = "/readyz"
 # Intentionally omit startCommand to use the Dockerfile's CMD.
 
 [variables]

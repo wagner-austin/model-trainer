@@ -1,30 +1,34 @@
 # syntax=docker/dockerfile:1
 
-FROM python:3.11-slim AS base
+FROM python:3.11-slim
 
-ENV POETRY_VERSION=1.8.3 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
-
-RUN pip install --no-cache-dir poetry==${POETRY_VERSION}
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
-# When building with repository root as context (e.g., Railway),
-# copy lockfiles from the server/ directory explicitly for caching.
-COPY server/pyproject.toml server/poetry.lock ./
-RUN poetry config virtualenvs.create false \
-    && poetry install --only main --no-interaction --no-ansi --no-root
+# Install Poetry
+RUN pip install --no-cache-dir poetry==1.8.3
 
-# Copy only the server/ sources into the image workdir
-COPY server/ .
+# Ensure Poetry venv binaries are on PATH
+ENV PATH="/app/.venv/bin:${PATH}"
 
-# API image
-FROM base AS api
+# Copy lockfiles first for better layer caching (root context -> server/*)
+COPY server/pyproject.toml /app/pyproject.toml
+COPY server/poetry.lock /app/poetry.lock
+
+# Install deps (main only) into in-project venv like handwriting-ai
+RUN poetry config virtualenvs.create true \
+ && poetry config virtualenvs.in-project true \
+ && poetry lock --no-interaction \
+ && poetry install --only main --no-interaction --no-ansi
+
+# Copy the server sources last
+COPY server/ /app/
+
 EXPOSE 8000
-# Respect platform-provided PORT (Railway, Render, Heroku, etc.) with a sane default
-CMD ["/bin/sh", "-lc", "poetry run uvicorn model_trainer.api.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]
 
-# Worker image
-FROM base AS worker
-CMD ["poetry", "run", "rq", "worker", "training", "--with-scheduler"]
+# Default to API; Railway worker service should override Start Command
+CMD ["/bin/sh", "-lc", \
+     "/app/.venv/bin/uvicorn model_trainer.api.main:create_app --factory --host 0.0.0.0 --port ${PORT:-8000}"]

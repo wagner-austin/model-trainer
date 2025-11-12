@@ -12,9 +12,8 @@ WORKDIR /app
 
 # When building with repository root as context (e.g., Railway),
 # copy lockfiles from the server/ directory explicitly for caching.
-COPY server/pyproject.toml ./
+COPY server/pyproject.toml server/poetry.lock ./
 RUN poetry config virtualenvs.create false \
-    && poetry lock --no-interaction \
     && poetry install --only main --no-interaction --no-ansi --no-root
 
 # Copy only the server/ sources into the image workdir

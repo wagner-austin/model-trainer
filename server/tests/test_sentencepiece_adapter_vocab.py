@@ -10,7 +10,7 @@ def test_sentencepiece_adapter_vocab_read(tmp_path: Path) -> None:
     model_path = tmp_path / "tokenizer.model"
     model_path.write_bytes(b"")
     vocab_path = tmp_path / "tokenizer.vocab"
-    vocab_path.write_text("[PAD]\n[UNK]\n[EOS]\nfoo\nbar\n", encoding="utf-8")
+    vocab_path.write_text("[PAD]\n\n[UNK]\n[EOS]\nfoo\nbar\n", encoding="utf-8")
     # Load adapter and check token_to_id and vocab size
     handle = SentencePieceBackend().load(str(model_path))
     # token_to_id depends on line order

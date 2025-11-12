@@ -12,9 +12,13 @@ class TrainRequest(BaseModel):
     num_epochs: Annotated[int, Field(default=1, ge=1)]
     batch_size: Annotated[int, Field(default=4, ge=1)]
     learning_rate: Annotated[float, Field(default=5e-4, gt=0)]
-    corpus_path: Annotated[str, Field(description="Path to text corpus root or file")]
+    corpus_path: Annotated[str | None, Field(default=None, description="Corpus path")]
+    corpus_file_id: Annotated[str | None, Field(default=None, description="data-bank-api file ID")]
     tokenizer_id: Annotated[str, Field(description="Tokenizer artifact ID to use")]
     user_id: Annotated[int, Field(default=0, description="Discord user ID for DM updates", ge=0)]
+
+    # Cross-field validation for corpus source is enforced in orchestrator
+    # to avoid mypy-plugin incompatibilities with pydantic model-level validators.
 
     model_config = {"extra": "forbid", "validate_assignment": True}
 

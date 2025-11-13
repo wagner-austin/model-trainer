@@ -9,9 +9,8 @@ class TokenizerTrainRequest(BaseModel):
     method: Annotated[Literal["bpe", "sentencepiece"], Field(default="bpe")]
     vocab_size: Annotated[int, Field(default=32000, ge=128)]
     min_frequency: Annotated[int, Field(default=2, ge=1)]
-    corpus_path: Annotated[str | None, Field(default=None, description="Corpus path")]
     corpus_file_id: Annotated[
-        str | None, Field(default=None, description="data-bank-api file ID for corpus")
+        str, Field(description="data-bank-api file ID for corpus", min_length=1)
     ]
     holdout_fraction: Annotated[float, Field(default=0.01, ge=0.0, le=0.5)]
     seed: Annotated[int, Field(default=42)]

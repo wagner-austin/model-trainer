@@ -70,13 +70,8 @@ def scan_file(path: Path) -> list[str]:
     except Exception as e:  # pragma: no cover
         return [f"{path}: failed to read: {e}"]
 
-    # Allow 'print' in test files only
-    allow_print = "tests" in path.parts
-
     lines = text.splitlines()
     for name, pat in PATTERNS.items():
-        if name == "print()" and allow_print:
-            continue
         for i, line in enumerate(lines, start=1):
             if pat.search(line):
                 errors.append(f"{path}:{i}: disallowed pattern: {name}")

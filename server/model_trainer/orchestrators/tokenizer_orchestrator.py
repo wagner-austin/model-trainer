@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from pathlib import Path
 
 import redis
 
@@ -12,7 +11,6 @@ from ..core.contracts.queue import TokenizerTrainPayload
 from ..core.errors.base import AppError, ErrorCode
 from ..core.infra.paths import tokenizer_logs_path
 from ..core.logging.service import LoggingService
-from ..core.services.data import corpus_fetcher as corpus_fetcher_mod
 from ..core.services.queue.rq_adapter import RQEnqueuer
 
 
@@ -47,18 +45,12 @@ class TokenizerOrchestrator:
                 extra={"event": "tokenizer_backend_unavailable", "method": req.method},
             )
             raise AppError(ErrorCode.CONFIG_INVALID, "sentencepiece backend unavailable")
-        # Resolve corpus path using data-bank-api file id exclusively
+        # Pass corpus_file_id through; worker will resolve via Data Bank
         fid = req.corpus_file_id.strip()
         if fid == "":  # should not occur due to schema min_length
             raise AppError(ErrorCode.CONFIG_INVALID, "corpus_file_id must be non-empty")
-        fetcher = corpus_fetcher_mod.CorpusFetcher(
-            api_url=self._settings.app.data_bank_api_url,
-            api_key=self._settings.app.data_bank_api_key,
-            cache_dir=Path(self._settings.app.data_root) / "corpus_cache",
-        )
-        resolved_corpus = str(fetcher.fetch(fid))
 
-        token_hash = abs(hash((req.method, req.vocab_size, resolved_corpus, req.seed))) % (10**10)
+        token_hash = abs(hash((req.method, req.vocab_size, fid, req.seed))) % (10**10)
         tokenizer_id = f"tok-{token_hash:010d}"
         self._redis.set(f"tokenizer:{tokenizer_id}:status", "queued")
         payload: TokenizerTrainPayload = {
@@ -66,7 +58,7 @@ class TokenizerOrchestrator:
             "method": req.method,
             "vocab_size": req.vocab_size,
             "min_frequency": req.min_frequency,
-            "corpus_path": resolved_corpus,
+            "corpus_file_id": fid,
             "holdout_fraction": req.holdout_fraction,
             "seed": req.seed,
         }

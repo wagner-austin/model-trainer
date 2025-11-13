@@ -28,13 +28,23 @@ def test_training_worker_sets_status_message_on_exception(
             "num_epochs": 1,
             "batch_size": 1,
             "learning_rate": 0.0005,
-            "corpus_path": str(tmp_path / "corpus"),
+            "corpus_file_id": "deadbeef",
             "tokenizer_id": "tok-missing",
         },
     }
 
-    # Ensure corpus dir exists
+    # Stub fetcher to point to local corpus dir
     (tmp_path / "corpus").mkdir()
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return tmp_path / "corpus"
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
     with pytest.raises(FileNotFoundError):
         tw.process_train_job(payload)  # raises due to missing tokenizer artifact
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
 from typing import Literal
 
 import redis
@@ -15,6 +16,7 @@ from ..core.contracts.queue import EvalJobPayload, TrainJobPayload, TrainRequest
 from ..core.infra.paths import model_dir, model_logs_path
 from ..core.logging.service import LoggingService
 from ..core.services.container import ServiceContainer
+from ..core.services.data import corpus_fetcher as corpus_fetcher_mod
 from ..core.services.tokenizer.bpe_backend import BPEBackend
 from ..core.services.tokenizer.spm_backend import SentencePieceBackend
 from ..events.trainer import encode_event
@@ -58,7 +60,7 @@ def _setup_env(settings: Settings) -> int:
     return threads
 
 
-def _build_cfg(req: TrainRequestPayload) -> ModelTrainConfig:
+def _build_cfg(req: TrainRequestPayload, corpus_path: str) -> ModelTrainConfig:
     return ModelTrainConfig(
         model_family=req["model_family"],
         model_size=req["model_size"],
@@ -67,7 +69,7 @@ def _build_cfg(req: TrainRequestPayload) -> ModelTrainConfig:
         batch_size=req["batch_size"],
         learning_rate=req["learning_rate"],
         tokenizer_id=req["tokenizer_id"],
-        corpus_path=req["corpus_path"],
+        corpus_path=corpus_path,
     )
 
 
@@ -182,7 +184,15 @@ def process_train_job(payload: TrainJobPayload) -> None:
     threads = _setup_env(settings)
 
     req = payload["request"]
-    cfg = _build_cfg(req)
+    # Resolve corpus_file_id to local cache path on the worker
+    fid = str(req["corpus_file_id"]).strip()
+    fetcher = corpus_fetcher_mod.CorpusFetcher(
+        api_url=settings.app.data_bank_api_url,
+        api_key=settings.app.data_bank_api_key,
+        cache_dir=Path(settings.app.data_root) / "corpus_cache",
+    )
+    resolved_corpus = str(fetcher.fetch(fid))
+    cfg = _build_cfg(req, resolved_corpus)
 
     def _hb(ts: float) -> None:
         r.set(f"{HEARTBEAT_KEY_PREFIX}{run_id}", str(ts))

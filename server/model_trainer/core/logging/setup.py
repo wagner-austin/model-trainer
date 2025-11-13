@@ -50,3 +50,6 @@ def setup_logging(level: str = "INFO") -> None:
     logging.getLogger("uvicorn").setLevel(logging.INFO)
     logging.getLogger("uvicorn.error").setLevel(logging.INFO)
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
+    logging.getLogger("hypercorn").setLevel(logging.INFO)
+    logging.getLogger("hypercorn.error").setLevel(logging.INFO)
+    logging.getLogger("hypercorn.access").setLevel(logging.WARNING)

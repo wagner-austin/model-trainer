@@ -65,26 +65,18 @@ class TrainingOrchestrator:
                 )
                 raise AppError(ErrorCode.CONFIG_INVALID, "unsupported model family") from None
         run_id = self._store.create_run(req.model_family, req.model_size)
-        # Validate and resolve corpus source (XOR between path and file_id)
-        cp_raw = (req.corpus_path or "").strip() if req.corpus_path is not None else ""
-        cf_raw = (req.corpus_file_id or "").strip() if req.corpus_file_id is not None else ""
-        if (cp_raw == "") == (cf_raw == ""):
-            from ..core.errors.base import AppError, ErrorCode
+        # Resolve corpus path (data-bank-api file id only)
+        fid = req.corpus_file_id.strip()
+        from ..core.errors.base import AppError, ErrorCode
 
-            raise AppError(
-                ErrorCode.CONFIG_INVALID,
-                "Exactly one of corpus_path or corpus_file_id must be provided",
-            )
-        # Resolve corpus path (support data-bank-api file id)
-        if cf_raw != "":
-            fetcher = corpus_fetcher_mod.CorpusFetcher(
-                api_url=self._settings.app.data_bank_api_url,
-                api_key=self._settings.app.data_bank_api_key,
-                cache_dir=Path(self._settings.app.data_root) / "corpus_cache",
-            )
-            resolved_corpus = str(fetcher.fetch(cf_raw))
-        else:
-            resolved_corpus = cp_raw
+        if fid == "":  # should not occur due to schema min_length
+            raise AppError(ErrorCode.CONFIG_INVALID, "corpus_file_id must be non-empty")
+        fetcher = corpus_fetcher_mod.CorpusFetcher(
+            api_url=self._settings.app.data_bank_api_url,
+            api_key=self._settings.app.data_bank_api_key,
+            cache_dir=Path(self._settings.app.data_root) / "corpus_cache",
+        )
+        resolved_corpus = str(fetcher.fetch(fid))
 
         request_payload: TrainRequestPayload = {
             "model_family": req.model_family,

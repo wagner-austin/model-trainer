@@ -61,16 +61,20 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
         out_dir=out_dir,
         sample_max_lines=settings.app.tokenizer_sample_max_lines,
     )
-    # Select backend by method
+    # Select backend by method and finalize status inline to reduce fallthrough branches
     if payload["method"] == "bpe":
         backend = BPEBackend()
         stats = backend.train(cfg)
+        r.set(f"tokenizer:{tok_id}:status", "completed")
+        r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
     elif payload["method"] == "sentencepiece":
         if all(shutil.which(x) is not None for x in ("spm_train", "spm_encode", "spm_decode")):
             from ..core.services.tokenizer.spm_backend import SentencePieceBackend
 
             backend_spm = SentencePieceBackend()
             stats = backend_spm.train(cfg)
+            r.set(f"tokenizer:{tok_id}:status", "completed")
+            r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
         else:
             r.set(f"tokenizer:{tok_id}:status", "failed")
             log.error(
@@ -83,8 +87,6 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
             )
             logsvc.close_run_file(path=tok_log_path)
             return
-    r.set(f"tokenizer:{tok_id}:status", "completed")
-    r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
     tok_logger.info(
         "Tokenizer training completed",
         extra={

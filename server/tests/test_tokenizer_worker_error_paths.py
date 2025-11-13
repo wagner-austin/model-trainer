@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import fakeredis
 from model_trainer.core.contracts.queue import TokenizerTrainPayload
 from model_trainer.worker.tokenizer_worker import process_tokenizer_train_job
@@ -33,9 +35,20 @@ def test_tokenizer_worker_sentencepiece_unavailable_sets_failed(monkeypatch: Mon
         "method": "sentencepiece",
         "vocab_size": 128,
         "min_frequency": 1,
-        "corpus_path": "/data",
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 42,
     }
+    # Stub fetcher to return a dummy path
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return Path("/data")
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
     process_tokenizer_train_job(payload)
     assert fake.get("tokenizer:tok-spm:status") == "failed"

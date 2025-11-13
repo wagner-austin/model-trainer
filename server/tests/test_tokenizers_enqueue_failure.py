@@ -11,11 +11,16 @@ def test_tokenizers_enqueue_returns_none_results_in_500(monkeypatch: MonkeyPatch
     app = create_app(Settings())
     container: ServiceContainer = app.state.container
 
-    # Force orchestrator to return None on enqueue
+    # Force orchestrator to return None on enqueue (patch class method to preserve binding)
     def _enqueue_fail(self: object, req: object) -> None:  # precise type not needed here
         return None
 
-    monkeypatch.setattr(container.tokenizer_orchestrator, "enqueue_training", _enqueue_fail)
+    monkeypatch.setattr(
+        type(container.tokenizer_orchestrator),
+        "enqueue_training",
+        _enqueue_fail,
+        raising=True,
+    )
 
     client = TestClient(app, raise_server_exceptions=False)
     body = {

@@ -52,10 +52,21 @@ def test_process_train_job_sets_status_message_on_exception(
             "batch_size": 1,
             "learning_rate": 5e-4,
             "tokenizer_id": "tok",
-            "corpus_path": str(tmp_path / "corpus"),
+            "corpus_file_id": "deadbeef",
         },
     }
     (tmp_path / "corpus").mkdir()
+    # Stub fetcher to return local corpus dir
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return tmp_path / "corpus"
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
     (tmp_path / "corpus" / "a.txt").write_text("hello\n", encoding="utf-8")
 
     # Fake redis and force .set on message key to raise, so we hit the nested except and re-raise

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+from pathlib import Path
 
 import redis
 
@@ -12,6 +13,7 @@ from ..core.contracts.queue import TokenizerTrainPayload
 from ..core.contracts.tokenizer import TokenizerTrainConfig, TokenizerTrainStats
 from ..core.infra.paths import tokenizer_dir, tokenizer_logs_path
 from ..core.logging.service import LoggingService
+from ..core.services.data import corpus_fetcher as corpus_fetcher_mod
 from ..core.services.tokenizer.bpe_backend import BPEBackend
 
 
@@ -55,11 +57,20 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
             "vocab_size": int(payload["vocab_size"]),
         },
     )
+    # Resolve corpus file id to local cache path
+    fid = str(payload["corpus_file_id"]).strip()
+    fetcher = corpus_fetcher_mod.CorpusFetcher(
+        api_url=settings.app.data_bank_api_url,
+        api_key=settings.app.data_bank_api_key,
+        cache_dir=Path(settings.app.data_root) / "corpus_cache",
+    )
+    resolved_corpus = str(fetcher.fetch(fid))
+
     cfg = TokenizerTrainConfig(
         method=payload["method"],
         vocab_size=payload["vocab_size"],
         min_frequency=payload["min_frequency"],
-        corpus_path=payload["corpus_path"],
+        corpus_path=resolved_corpus,
         holdout_fraction=payload["holdout_fraction"],
         seed=payload["seed"],
         out_dir=out_dir,

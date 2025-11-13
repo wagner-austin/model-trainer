@@ -29,7 +29,8 @@ def test_runs_logs_stream_follow_none_max_loops_exercises_else_branch(
 
     # Provide a sleep function that appends a line to the file to wake the follower
     def _sleep_and_append(_: float) -> None:
-        log_path.write_text("two\n", encoding="utf-8")
+        with open(log_path, "ab") as f:
+            f.write(b"two\n")
 
     h._sleep_fn = _sleep_and_append
     h._follow_max_loops = None  # ensure the None branch at line 110 is evaluated

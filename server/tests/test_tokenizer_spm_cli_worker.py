@@ -28,7 +28,7 @@ def test_sentencepiece_orchestrator_fails_without_cli(monkeypatch: MonkeyPatch) 
         "method": "sentencepiece",
         "vocab_size": 128,
         "min_frequency": 1,
-        "corpus_path": "/tmp/nowhere",
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 1,
     }

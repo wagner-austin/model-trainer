@@ -29,6 +29,19 @@ def test_api_key_unauthorized_and_authorized(tmp_path: Path, monkeypatch: Monkey
 
     monkeypatch.setattr(container.rq_enqueuer, "enqueue_train", _fake_enqueue_train)
 
+    # Stub CorpusFetcher to map file id to local corpus path
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: object, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: object, file_id: str) -> Path:
+            (tmp_path / "corpus").mkdir(exist_ok=True)
+            return tmp_path / "corpus"
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
+
     client = TestClient(app)
 
     body = {
@@ -38,7 +51,7 @@ def test_api_key_unauthorized_and_authorized(tmp_path: Path, monkeypatch: Monkey
         "num_epochs": 1,
         "batch_size": 1,
         "learning_rate": 0.0005,
-        "corpus_path": str(tmp_path / "corpus"),
+        "corpus_file_id": "deadbeef",
         "tokenizer_id": "tok-1",
         "user_id": 123,
     }

@@ -33,6 +33,19 @@ def test_orchestrator_threads_user_id(monkeypatch: MonkeyPatch) -> None:
 
     monkeypatch.setattr(enq, "enqueue_train", _fake_enqueue_train)
     orch = TrainingOrchestrator(settings=s, redis_client=r, enqueuer=enq, model_registry=None)
+    # Stub CorpusFetcher to avoid network and provide a local path
+    from model_trainer.core.services.data import corpus_fetcher as cf
+    from pathlib import Path
+    import tempfile
+
+    class _CF:
+        def __init__(self: object, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: object, file_id: str) -> Path:
+            return Path(tempfile.gettempdir())
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
     req = TrainRequest(
         model_family="gpt2",
         model_size="small",
@@ -40,7 +53,7 @@ def test_orchestrator_threads_user_id(monkeypatch: MonkeyPatch) -> None:
         num_epochs=1,
         batch_size=2,
         learning_rate=5e-4,
-        corpus_path="/data/corpus",
+        corpus_file_id="deadbeef",
         tokenizer_id="tok1",
         user_id=42,
     )

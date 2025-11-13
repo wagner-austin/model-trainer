@@ -47,23 +47,16 @@ class TokenizerOrchestrator:
                 extra={"event": "tokenizer_backend_unavailable", "method": req.method},
             )
             raise AppError(ErrorCode.CONFIG_INVALID, "sentencepiece backend unavailable")
-        # Resolve corpus path using data-bank-api file id; enforce XOR like training orchestrator
-        cp_raw = (req.corpus_path or "").strip() if req.corpus_path is not None else ""
-        cf_raw = (req.corpus_file_id or "").strip() if req.corpus_file_id is not None else ""
-        if (cp_raw == "") == (cf_raw == ""):
-            raise AppError(
-                ErrorCode.CONFIG_INVALID,
-                "Exactly one of corpus_path or corpus_file_id must be provided",
-            )
-        if cf_raw != "":
-            fetcher = corpus_fetcher_mod.CorpusFetcher(
-                api_url=self._settings.app.data_bank_api_url,
-                api_key=self._settings.app.data_bank_api_key,
-                cache_dir=Path(self._settings.app.data_root) / "corpus_cache",
-            )
-            resolved_corpus = str(fetcher.fetch(cf_raw))
-        else:
-            resolved_corpus = cp_raw
+        # Resolve corpus path using data-bank-api file id exclusively
+        fid = req.corpus_file_id.strip()
+        if fid == "":  # should not occur due to schema min_length
+            raise AppError(ErrorCode.CONFIG_INVALID, "corpus_file_id must be non-empty")
+        fetcher = corpus_fetcher_mod.CorpusFetcher(
+            api_url=self._settings.app.data_bank_api_url,
+            api_key=self._settings.app.data_bank_api_key,
+            cache_dir=Path(self._settings.app.data_root) / "corpus_cache",
+        )
+        resolved_corpus = str(fetcher.fetch(fid))
 
         token_hash = abs(hash((req.method, req.vocab_size, resolved_corpus, req.seed))) % (10**10)
         tokenizer_id = f"tok-{token_hash:010d}"

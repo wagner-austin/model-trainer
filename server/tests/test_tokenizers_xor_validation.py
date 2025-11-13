@@ -1,0 +1,39 @@
+from __future__ import annotations
+
+import fakeredis
+from _pytest.monkeypatch import MonkeyPatch
+from fastapi.testclient import TestClient
+from model_trainer.api.main import create_app
+from model_trainer.core.config.settings import Settings
+from model_trainer.core.services.container import ServiceContainer
+
+
+def test_tokenizers_train_requires_exactly_one_corpus_field(monkeypatch: MonkeyPatch) -> None:
+    app = create_app(Settings())
+    container: ServiceContainer = app.state.container
+    # Use fake redis to avoid external deps
+    fake = fakeredis.FakeRedis(decode_responses=True)
+    container.redis = fake
+    container.tokenizer_orchestrator._redis = fake
+
+    calls: list[dict[str, object]] = []
+
+    def _fake_enqueue_tokenizer(payload: dict[str, object]) -> str:
+        calls.append(payload)
+        return "job-1"
+
+    # Prevent any enqueue from being called on invalid input
+    monkeypatch.setattr(container.rq_enqueuer, "enqueue_tokenizer", _fake_enqueue_tokenizer)
+    client = TestClient(app)
+
+    # Missing both corpus_path and corpus_file_id
+    body = {
+        "method": "bpe",
+        "vocab_size": 128,
+        "min_frequency": 1,
+        "holdout_fraction": 0.1,
+        "seed": 42,
+    }
+    r = client.post("/tokenizers/train", json=body)
+    assert r.status_code == 400
+    assert calls == []

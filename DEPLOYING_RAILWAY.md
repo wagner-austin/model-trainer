@@ -12,7 +12,7 @@ Prereqs
 Service: API (model-trainer-api)
 - Builder: Dockerfile
 - Dockerfile Path: `server/Dockerfile`
-- Start Command: leave empty (Dockerfile CMD runs Uvicorn and respects `$PORT`)
+- Start Command: leave empty (Dockerfile CMD runs Hypercorn and respects `$PORT`)
 - Exposed Port: Use platform default (image honors `$PORT`, defaults 8000)
 - Healthcheck Path: `/readyz`
 - Environment Variables:
@@ -34,7 +34,7 @@ Service: Worker (model-trainer-worker)
 
  Notes on Reliability and Drift
 - Single source of truth for container logic is `server/Dockerfile`.
-- API binds to `$PORT` (see `server/Dockerfile` default CMD) to work on Railway and similar platforms.
+- API binds to `$PORT` with Hypercorn (see `server/Dockerfile` default CMD) to work on Railway and similar platforms.
 - Strict typing and guard rails are enforced in CI/local via:
   - `mypy --strict`, `ruff` and `scripts/guard.py` (no `Any`, no casts, no `type: ignore`).
   - Run `make check` locally to reproduce CI checks.

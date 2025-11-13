@@ -151,7 +151,7 @@ def test_runs_train_unsupported_backend_maps_400(tmp_path: Path, monkeypatch: Mo
         "num_epochs": 1,
         "batch_size": 1,
         "learning_rate": 1e-3,
-        "corpus_path": str(tmp_path),
+        "corpus_file_id": "deadbeef",
         "tokenizer_id": "tok",
     }
     res = client.post("/runs/train", json=payload)

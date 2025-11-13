@@ -26,7 +26,7 @@ def _mk_app(tmp: Path) -> TestClient:
     return TestClient(app)
 
 
-def test_runs_train_missing_both_corpus_fields_returns_400(tmp_path: Path) -> None:
+def test_runs_train_missing_corpus_file_id_returns_422(tmp_path: Path) -> None:
     client = _mk_app(tmp_path)
     body = {
         "model_family": "gpt2",
@@ -35,16 +35,15 @@ def test_runs_train_missing_both_corpus_fields_returns_400(tmp_path: Path) -> No
         "num_epochs": 1,
         "batch_size": 1,
         "learning_rate": 5e-4,
-        # Neither corpus_path nor corpus_file_id provided
+        # Missing required corpus_file_id
         "tokenizer_id": "tok-1",
     }
     r = client.post("/runs/train", json=body)
-    assert r.status_code == 400
-    hdrs = {k.lower(): v for (k, v) in r.headers.items()}
-    assert "config_invalid" in r.text.lower() and "x-request-id" in hdrs and hdrs["x-request-id"]
+    assert r.status_code == 422
+    assert "corpus_file_id" in r.text and "missing" in r.text.lower()
 
 
-def test_runs_train_both_corpus_fields_returns_400(tmp_path: Path) -> None:
+def test_runs_train_extra_field_corpus_path_forbidden_returns_422(tmp_path: Path) -> None:
     client = _mk_app(tmp_path)
     body = {
         "model_family": "gpt2",
@@ -53,11 +52,10 @@ def test_runs_train_both_corpus_fields_returns_400(tmp_path: Path) -> None:
         "num_epochs": 1,
         "batch_size": 1,
         "learning_rate": 5e-4,
-        "corpus_path": str(tmp_path / "corpus.txt"),
         "corpus_file_id": "deadbeef",
+        "corpus_path": str(tmp_path / "corpus.txt"),
         "tokenizer_id": "tok-1",
     }
     r = client.post("/runs/train", json=body)
-    assert r.status_code == 400
-    hdrs2 = {k.lower(): v for (k, v) in r.headers.items()}
-    assert "config_invalid" in r.text.lower() and "x-request-id" in hdrs2 and hdrs2["x-request-id"]
+    assert r.status_code == 422
+    assert "extra_forbidden" in r.text.lower() or "extra inputs" in r.text.lower()

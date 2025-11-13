@@ -7,6 +7,8 @@ import socket
 import sys
 import time
 
+from .types import LoggingExtra
+
 
 class JsonFormatter(logging.Formatter):
     def format(self: JsonFormatter, record: logging.LogRecord) -> str:  # pragma: no cover - trivial
@@ -17,6 +19,13 @@ class JsonFormatter(logging.Formatter):
             "msg": record.getMessage(),
             "instance": os.getenv("APP_INSTANCE_ID", _compute_instance_id()),
         }
+
+        # Dynamically include all extra fields defined in LoggingExtra TypedDict
+        for field_name in LoggingExtra.__annotations__:
+            if hasattr(record, field_name):
+                value: object = getattr(record, field_name)
+                payload[field_name] = value
+
         if record.exc_info:
             payload["exc_info"] = self.formatException(record.exc_info)
         return json.dumps(payload, separators=(",", ":"))

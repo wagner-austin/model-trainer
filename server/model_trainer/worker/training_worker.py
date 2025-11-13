@@ -175,12 +175,17 @@ def _emit_failed_event(
 
 
 def process_train_job(payload: TrainJobPayload) -> None:
+    # Re-initialize logging in RQ subprocess (config lost after execvp in rq_worker.py)
+    from ..core.logging.setup import setup_logging
+
+    settings = Settings()
+    setup_logging(settings.logging.level)
+
     log = logging.getLogger(__name__)
     r = _redis_client()
     run_id = payload["run_id"]
     user_id = int(payload["user_id"])
     r.set(f"{STATUS_KEY_PREFIX}{run_id}", "running")
-    settings = Settings()
     threads = _setup_env(settings)
 
     req = payload["request"]
@@ -336,6 +341,12 @@ class _EvalCacheModel(BaseModel):
 
 
 def process_eval_job(payload: EvalJobPayload) -> None:
+    # Re-initialize logging in RQ subprocess (config lost after execvp in rq_worker.py)
+    from ..core.logging.setup import setup_logging
+
+    settings = Settings()
+    setup_logging(settings.logging.level)
+
     log = logging.getLogger(__name__)
     r = _redis_client()
     run_id = payload["run_id"]
@@ -343,7 +354,6 @@ def process_eval_job(payload: EvalJobPayload) -> None:
     running = _EvalCacheModel(status="running", split=split)
     r.set(f"{EVAL_KEY_PREFIX}{run_id}", running.model_dump_json())
     # Evaluate using saved model and conservative defaults if full cfg unavailable
-    settings = Settings()
     # Load training manifest for this run to get tokenizer_id and params
     from pathlib import Path
 

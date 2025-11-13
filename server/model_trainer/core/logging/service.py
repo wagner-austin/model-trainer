@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from logging import Handler, Logger, LoggerAdapter
 from pathlib import Path
 
+from .types import LoggingExtra
+
 
 class _JsonFormatter(logging.Formatter):
     def __init__(self: _JsonFormatter, *, static_fields: dict[str, str] | None = None) -> None:
@@ -23,24 +25,14 @@ class _JsonFormatter(logging.Formatter):
         }
         for k, v in self._static.items():
             payload[k] = v
-        if hasattr(record, "category"):
-            cat: object = record.category
-            payload["category"] = cat
-        if hasattr(record, "service"):
-            svc: object = record.service
-            payload["service"] = svc
-        if hasattr(record, "run_id"):
-            rid: object = record.run_id
-            payload["run_id"] = rid
-        if hasattr(record, "tokenizer_id"):
-            tid: object = record.tokenizer_id
-            payload["tokenizer_id"] = tid
-        if hasattr(record, "event"):
-            evt: object = record.event
-            payload["event"] = evt
-        if hasattr(record, "error_code"):
-            ec: object = record.error_code
-            payload["error_code"] = ec
+
+        # Dynamically include all extra fields defined in LoggingExtra TypedDict
+        # Special handling for category and service since they might be in static_fields
+        for field_name in LoggingExtra.__annotations__:
+            if hasattr(record, field_name) and field_name not in self._static:
+                value: object = getattr(record, field_name)
+                payload[field_name] = value
+
         return json.dumps(payload, separators=(",", ":"))
 
 

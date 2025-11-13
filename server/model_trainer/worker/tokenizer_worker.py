@@ -9,7 +9,7 @@ import redis
 from ..core.config.settings import Settings
 from ..core.contracts.compute import LocalCPUProvider
 from ..core.contracts.queue import TokenizerTrainPayload
-from ..core.contracts.tokenizer import TokenizerTrainConfig
+from ..core.contracts.tokenizer import TokenizerTrainConfig, TokenizerTrainStats
 from ..core.infra.paths import tokenizer_dir, tokenizer_logs_path
 from ..core.logging.service import LoggingService
 from ..core.services.tokenizer.bpe_backend import BPEBackend
@@ -18,6 +18,10 @@ from ..core.services.tokenizer.bpe_backend import BPEBackend
 def _redis_client() -> redis.Redis[str]:
     url = os.getenv("REDIS_URL", "redis://redis:6379/0")
     return redis.from_url(url, decode_responses=True)
+
+
+def _has_spm_cli() -> bool:
+    return all(shutil.which(x) is not None for x in ("spm_train", "spm_encode", "spm_decode"))
 
 
 def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
@@ -61,42 +65,49 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
         out_dir=out_dir,
         sample_max_lines=settings.app.tokenizer_sample_max_lines,
     )
-    # Select backend by method and finalize status inline to reduce fallthrough branches
+
+    def _log_completed(stats: TokenizerTrainStats) -> None:
+        tok_logger.info(
+            "Tokenizer training completed",
+            extra={
+                "event": "tokenizer_completed",
+                "tokenizer_id": tok_id,
+                "vocab_size": int(payload["vocab_size"]),
+                "coverage": float(stats.coverage),
+                "oov_rate": float(stats.oov_rate),
+                "token_count": int(stats.token_count),
+                "char_coverage": float(stats.char_coverage),
+            },
+        )
+
+    # Select backend by method and finalize per-branch
     if payload["method"] == "bpe":
         backend = BPEBackend()
         stats = backend.train(cfg)
         r.set(f"tokenizer:{tok_id}:status", "completed")
         r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
-    elif payload["method"] == "sentencepiece":
-        if all(shutil.which(x) is not None for x in ("spm_train", "spm_encode", "spm_decode")):
-            from ..core.services.tokenizer.spm_backend import SentencePieceBackend
+        _log_completed(stats)
+        logsvc.close_run_file(path=tok_log_path)
+        return
+    # sentencepiece
+    if _has_spm_cli():
+        from ..core.services.tokenizer.spm_backend import SentencePieceBackend
 
-            backend_spm = SentencePieceBackend()
-            stats = backend_spm.train(cfg)
-            r.set(f"tokenizer:{tok_id}:status", "completed")
-            r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
-        else:
-            r.set(f"tokenizer:{tok_id}:status", "failed")
-            log.error(
-                "Unsupported tokenizer method: %s (SentencePiece CLI not available)",
-                payload["method"],
-            )
-            tok_logger.info(
-                "Tokenizer backend unavailable",
-                extra={"event": "tokenizer_backend_unavailable", "tokenizer_id": tok_id},
-            )
-            logsvc.close_run_file(path=tok_log_path)
-            return
+        backend_spm = SentencePieceBackend()
+        stats = backend_spm.train(cfg)
+        r.set(f"tokenizer:{tok_id}:status", "completed")
+        r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
+        _log_completed(stats)
+        logsvc.close_run_file(path=tok_log_path)
+        return
+    r.set(f"tokenizer:{tok_id}:status", "failed")
+    log.error(
+        "Unsupported tokenizer method: %s (SentencePiece CLI not available)",
+        payload["method"],
+    )
     tok_logger.info(
-        "Tokenizer training completed",
-        extra={
-            "event": "tokenizer_completed",
-            "tokenizer_id": tok_id,
-            "vocab_size": int(payload["vocab_size"]),
-            "coverage": float(stats.coverage),
-            "oov_rate": float(stats.oov_rate),
-            "token_count": int(stats.token_count),
-            "char_coverage": float(stats.char_coverage),
-        },
+        "Tokenizer backend unavailable",
+        extra={"event": "tokenizer_backend_unavailable", "tokenizer_id": tok_id},
     )
     logsvc.close_run_file(path=tok_log_path)
+    return

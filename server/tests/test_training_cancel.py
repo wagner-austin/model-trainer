@@ -61,10 +61,21 @@ def test_training_cancellation_with_redis(tmp_path: Path, monkeypatch: MonkeyPat
             "num_epochs": 5,
             "batch_size": 1,
             "learning_rate": 5e-4,
-            "corpus_path": str(corpus),
+            "corpus_file_id": "deadbeef",
             "tokenizer_id": tok_id,
         },
     }
+    # Stub fetcher to return local corpus
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return corpus
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
 
     # Run training in a thread and cancel shortly after start
     t = threading.Thread(target=process_train_job, args=(payload,))

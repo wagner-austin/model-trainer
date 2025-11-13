@@ -10,7 +10,7 @@ class TrainRequestPayload(TypedDict):
     num_epochs: int
     batch_size: int
     learning_rate: float
-    corpus_path: str
+    corpus_file_id: str
     tokenizer_id: str
 
 
@@ -31,6 +31,6 @@ class TokenizerTrainPayload(TypedDict):
     method: Literal["bpe", "sentencepiece"]
     vocab_size: int
     min_frequency: int
-    corpus_path: str
+    corpus_file_id: str
     holdout_fraction: float
     seed: int

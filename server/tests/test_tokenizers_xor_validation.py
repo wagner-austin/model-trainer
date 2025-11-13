@@ -8,7 +8,7 @@ from model_trainer.core.config.settings import Settings
 from model_trainer.core.services.container import ServiceContainer
 
 
-def test_tokenizers_train_requires_exactly_one_corpus_field(monkeypatch: MonkeyPatch) -> None:
+def test_tokenizers_requires_corpus_file_id_and_forbids_extra(monkeypatch: MonkeyPatch) -> None:
     app = create_app(Settings())
     container: ServiceContainer = app.state.container
     # Use fake redis to avoid external deps
@@ -26,7 +26,7 @@ def test_tokenizers_train_requires_exactly_one_corpus_field(monkeypatch: MonkeyP
     monkeypatch.setattr(container.rq_enqueuer, "enqueue_tokenizer", _fake_enqueue_tokenizer)
     client = TestClient(app)
 
-    # Missing both corpus_path and corpus_file_id
+    # Missing corpus_file_id -> 422
     body = {
         "method": "bpe",
         "vocab_size": 128,
@@ -35,5 +35,18 @@ def test_tokenizers_train_requires_exactly_one_corpus_field(monkeypatch: MonkeyP
         "seed": 42,
     }
     r = client.post("/tokenizers/train", json=body)
-    assert r.status_code == 400
+    assert r.status_code == 422
+    assert calls == []
+    # Extra field corpus_path should be forbidden -> 422
+    body2 = {
+        "method": "bpe",
+        "vocab_size": 128,
+        "min_frequency": 1,
+        "corpus_file_id": "deadbeef",
+        "corpus_path": "/ignored",
+        "holdout_fraction": 0.1,
+        "seed": 42,
+    }
+    r2 = client.post("/tokenizers/train", json=body2)
+    assert r2.status_code == 422
     assert calls == []

@@ -83,11 +83,6 @@ def process_tokenizer_train_job(payload: TokenizerTrainPayload) -> None:
             )
             logsvc.close_run_file(path=tok_log_path)
             return
-    else:
-        r.set(f"tokenizer:{tok_id}:status", "failed")
-        tok_logger.error("Unsupported tokenizer method: %s", payload["method"])
-        logsvc.close_run_file(path=tok_log_path)
-        return
     r.set(f"tokenizer:{tok_id}:status", "completed")
     r.set(f"tokenizer:{tok_id}:stats", stats.model_dump_json())
     tok_logger.info(

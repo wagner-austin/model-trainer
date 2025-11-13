@@ -106,7 +106,7 @@ def test_rq_enqueuer_methods(monkeypatch: MonkeyPatch) -> None:
             "num_epochs": 1,
             "batch_size": 1,
             "learning_rate": 1e-3,
-            "corpus_path": "/x",
+            "corpus_file_id": "deadbeef",
             "tokenizer_id": "tok",
         },
         "user_id": 1,
@@ -142,7 +142,7 @@ def test_rq_enqueuer_methods(monkeypatch: MonkeyPatch) -> None:
         "method": "bpe",
         "vocab_size": 128,
         "min_frequency": 1,
-        "corpus_path": "/c",
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 42,
     }

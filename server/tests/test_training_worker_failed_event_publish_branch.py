@@ -40,9 +40,20 @@ def test_training_worker_failed_event_publish_branch(
             "batch_size": 1,
             "learning_rate": 5e-4,
             "tokenizer_id": "tok",
-            "corpus_path": str(tmp_path),
+            "corpus_file_id": "deadbeef",
         },
     }
+    # Stub fetcher to return a local dir
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return tmp_path
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
 
     with pytest.raises(RuntimeError):
         tw.process_train_job(payload)

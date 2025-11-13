@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 from model_trainer.api.main import create_app
 from model_trainer.core.config.settings import Settings
 from model_trainer.core.services.container import ServiceContainer
-from model_trainer.core.services.data import corpus_fetcher as cf
 
 
 def test_tokenizer_enqueue_with_corpus_file_id(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
@@ -25,18 +24,7 @@ def test_tokenizer_enqueue_with_corpus_file_id(tmp_path: Path, monkeypatch: Monk
         captured = payload
         return "job-1"
 
-    # Stub CorpusFetcher.fetch to return a path under tmp_path
-    class _Stub:
-        def __init__(self: _Stub, *_: object, **__: object) -> None:
-            return
-
-        def fetch(self: _Stub, fid: str) -> Path:  # pragma: no cover - trivial branch
-            p = tmp_path / f"{fid}.txt"
-            p.write_text("hello", encoding="utf-8")
-            return p
-
     monkeypatch.setattr(container.rq_enqueuer, "enqueue_tokenizer", _fake_enqueue_tokenizer)
-    monkeypatch.setattr(cf, "CorpusFetcher", _Stub)
 
     client = TestClient(app)
     body = {
@@ -49,5 +37,4 @@ def test_tokenizer_enqueue_with_corpus_file_id(tmp_path: Path, monkeypatch: Monk
     }
     r = client.post("/tokenizers/train", json=body)
     assert r.status_code == 200
-    assert isinstance(captured.get("corpus_path"), str)
-    assert str(tmp_path) in str(captured["corpus_path"])
+    assert captured.get("corpus_file_id") == "deadbeef"

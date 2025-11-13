@@ -35,9 +35,20 @@ def test_tokenizer_worker_respects_threads_env_branch(
         "method": "bpe",
         "vocab_size": 64,
         "min_frequency": 1,
-        "corpus_path": str(tmp_path / "c"),
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 1,
     }
+    # Stub fetcher to map file id to local corpus path
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return tmp_path / "c"
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
     process_tokenizer_train_job(payload)
     assert fake.get("tokenizer:tok-thr:status") == "completed"

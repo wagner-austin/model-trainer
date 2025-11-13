@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 
 import redis
 
@@ -11,6 +12,7 @@ from ..core.contracts.queue import TokenizerTrainPayload
 from ..core.errors.base import AppError, ErrorCode
 from ..core.infra.paths import tokenizer_logs_path
 from ..core.logging.service import LoggingService
+from ..core.services.data import corpus_fetcher as corpus_fetcher_mod
 from ..core.services.queue.rq_adapter import RQEnqueuer
 
 
@@ -45,7 +47,25 @@ class TokenizerOrchestrator:
                 extra={"event": "tokenizer_backend_unavailable", "method": req.method},
             )
             raise AppError(ErrorCode.CONFIG_INVALID, "sentencepiece backend unavailable")
-        token_hash = abs(hash((req.method, req.vocab_size, req.corpus_path, req.seed))) % (10**10)
+        # Resolve corpus path using data-bank-api file id; enforce XOR like training orchestrator
+        cp_raw = (req.corpus_path or "").strip() if req.corpus_path is not None else ""
+        cf_raw = (req.corpus_file_id or "").strip() if req.corpus_file_id is not None else ""
+        if (cp_raw == "") == (cf_raw == ""):
+            raise AppError(
+                ErrorCode.CONFIG_INVALID,
+                "Exactly one of corpus_path or corpus_file_id must be provided",
+            )
+        if cf_raw != "":
+            fetcher = corpus_fetcher_mod.CorpusFetcher(
+                api_url=self._settings.app.data_bank_api_url,
+                api_key=self._settings.app.data_bank_api_key,
+                cache_dir=Path(self._settings.app.data_root) / "corpus_cache",
+            )
+            resolved_corpus = str(fetcher.fetch(cf_raw))
+        else:
+            resolved_corpus = cp_raw
+
+        token_hash = abs(hash((req.method, req.vocab_size, resolved_corpus, req.seed))) % (10**10)
         tokenizer_id = f"tok-{token_hash:010d}"
         self._redis.set(f"tokenizer:{tokenizer_id}:status", "queued")
         payload: TokenizerTrainPayload = {
@@ -53,7 +73,7 @@ class TokenizerOrchestrator:
             "method": req.method,
             "vocab_size": req.vocab_size,
             "min_frequency": req.min_frequency,
-            "corpus_path": req.corpus_path,
+            "corpus_path": resolved_corpus,
             "holdout_fraction": req.holdout_fraction,
             "seed": req.seed,
         }

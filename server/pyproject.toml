@@ -18,7 +18,7 @@ priority = "explicit"
 [tool.poetry.dependencies]
 python = "^3.11"
 fastapi = "^0.115.0"
-uvicorn = {version = "^0.30.0", extras = ["standard"]}
+hypercorn = "^0.18.0"
 pydantic = "^2.7.0"
 pydantic-settings = "^2.2.1"
 redis = "^5.0.7"

@@ -40,7 +40,7 @@ def test_orchestrator_unsupported_model_raises() -> None:
         num_epochs=1,
         batch_size=1,
         learning_rate=1e-3,
-        corpus_path="/c",
+        corpus_file_id="deadbeef",
         tokenizer_id="tok",
     )
     from model_trainer.core.errors.base import AppError

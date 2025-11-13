@@ -102,7 +102,7 @@ server/
 - Language (Core/API): Python 3.11+
   - Strict typing: mypy (strict mode), no `typing.Any`, no `typing.cast`.
   - Pydantic v2 for all data models (configs, DTOs, results). Prefer `BaseModel` with `extra="forbid"` and `validate_assignment=True`. Avoid `@dataclass` for these shapes.
-  - FastAPI + Uvicorn for API with typed routes and models.
+- FastAPI + Hypercorn for API with typed routes and models.
   - Hugging Face: Transformers, Datasets, Tokenizers.
   - PyTorch (CPU) for training; CPU threading configured explicitly.
   - Ruff + mypy in pre-commit; black/ruff format if adopted by repo.
@@ -428,7 +428,7 @@ All request/response schemas are strictly typed Pydantic models. No `Any`.
 ## 23. Containerization (Docker & Compose)
 
 Services (compose profiles `dev` and `prod`):
-- api: FastAPI + Uvicorn, CPU-only PyTorch, Poetry-managed runtime. Exposes port 8000.
+- api: FastAPI + Hypercorn, CPU-only PyTorch, Poetry-managed runtime. Exposes port 8000.
 - worker (recommended for multi-day async): same image as api, runs job consumer for training/eval.
 - ui-dev (dev): Vite dev server with HMR; proxies `/api` → api; port 5173.
 - ui (prod): Nginx serving built static assets.
@@ -662,6 +662,6 @@ Testing strategy:
 
 ## 34. Railway Deployment Notes
 
-- Services: API (uvicorn) and worker (rq), plus Redis addon.
+- Services: API (hypercorn) and worker (rq), plus Redis addon.
 - Ensure start commands execute in `server/` (per-service root or `cd server && ...`).
 - Required env: `REDIS_URL`, `SECURITY__API_KEY` (if enforcing auth), and artifacts/log roots.

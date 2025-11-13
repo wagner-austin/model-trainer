@@ -35,10 +35,23 @@ def test_tokenizer_worker_sentencepiece_missing_cli(
         "method": "sentencepiece",
         "vocab_size": 100,
         "min_frequency": 1,
-        "corpus_path": str(tmp_path),
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 1,
     }
+    # Worker fetcher returns a local path
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            p = tmp_path / "corpus.txt"
+            p.write_text("x\n", encoding="utf-8")
+            return p
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
     import shutil
 
     def _which_none(name: str) -> None:

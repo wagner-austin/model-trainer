@@ -102,10 +102,21 @@ def test_sentencepiece_worker_trains_and_writes_artifacts_with_mocked_cli(
         "method": "sentencepiece",
         "vocab_size": 128,
         "min_frequency": 1,
-        "corpus_path": str(corpus),
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 1,
     }
+    # Stub fetcher to return the local corpus directory
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return corpus
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
     process_tokenizer_train_job(payload)
     assert fake.get("tokenizer:tok-spm:status") == "completed"
     out_dir = artifacts / "tokenizers" / "tok-spm"

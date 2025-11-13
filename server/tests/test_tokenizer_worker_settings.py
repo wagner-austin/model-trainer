@@ -32,7 +32,7 @@ def test_tokenizer_worker_uses_settings_artifacts_root(
         "method": "bpe",
         "vocab_size": 64,
         "min_frequency": 1,
-        "corpus_path": str(tmp_path),  # empty dir leads to error; provide a tiny corpus
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 1,
     }
@@ -40,6 +40,17 @@ def test_tokenizer_worker_uses_settings_artifacts_root(
     # Prepare minimal corpus
     (tmp_path / "a.txt").write_text("hello world\n", encoding="utf-8")
 
+    # Stub fetcher to return local tmp_path
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return tmp_path
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
     process_tokenizer_train_job(payload)  # should complete and write under artifacts
     assert fake.get("tokenizer:tok-worker:status") == "completed"
     # Verify artifacts path used via Settings

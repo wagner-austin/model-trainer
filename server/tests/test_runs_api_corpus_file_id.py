@@ -25,29 +25,15 @@ def test_runs_train_with_corpus_file_id(tmp_path: Path, monkeypatch: MonkeyPatch
     container.training_orchestrator._redis = fake
 
     # Stub RQ to capture payload
-    captured: list[dict[str, object]] = []
+    from model_trainer.core.contracts.queue import TrainJobPayload, TrainRequestPayload
 
-    def _fake_enqueue_train(payload: dict[str, object]) -> str:
+    captured: list[TrainJobPayload] = []
+
+    def _fake_enqueue_train(payload: TrainJobPayload) -> str:
         captured.append(payload)
         return "job-cfid"
 
     monkeypatch.setattr(container.rq_enqueuer, "enqueue_train", _fake_enqueue_train)
-
-    # Patch fetcher to return a path
-    dummy_path = tmp_path / "cache" / "deadbeef.txt"
-    dummy_path.parent.mkdir(parents=True, exist_ok=True)
-    dummy_path.write_text("hello", encoding="utf-8")
-
-    from model_trainer.core.services.data import corpus_fetcher as cf
-
-    class _CF:
-        def __init__(self: object, *args: object, **kwargs: object) -> None:
-            pass
-
-        def fetch(self: object, file_id: str) -> Path:
-            return dummy_path
-
-    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
 
     client = TestClient(app)
 
@@ -65,8 +51,5 @@ def test_runs_train_with_corpus_file_id(tmp_path: Path, monkeypatch: MonkeyPatch
     r = client.post("/runs/train", json=body)
     assert r.status_code == 200
     assert captured, "payload should be captured"
-    obj = captured[0]["request"]
-    assert isinstance(obj, dict)
-    req = obj
-    assert isinstance(req, dict)
-    assert str(req.get("corpus_path")) == str(dummy_path)
+    req: TrainRequestPayload = captured[0]["request"]
+    assert req["corpus_file_id"] == "deadbeef"

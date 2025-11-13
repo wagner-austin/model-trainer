@@ -24,13 +24,28 @@ def test_tokenizer_enqueue_passes_method(monkeypatch: MonkeyPatch) -> None:
         return "job-1"
 
     monkeypatch.setattr(container.rq_enqueuer, "enqueue_tokenizer", _fake_enqueue_tokenizer)
+    # Stub CorpusFetcher to map file id to a local path
+    import tempfile
+    from pathlib import Path
+
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: object, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: object, file_id: str) -> Path:  # return a valid path
+            return Path(tempfile.gettempdir())
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
+
     client = TestClient(app)
 
     body = {
         "method": "bpe",
         "vocab_size": 128,
         "min_frequency": 1,
-        "corpus_path": "/tmp/xxx",  # not accessed by enqueue
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 42,
     }

@@ -98,9 +98,21 @@ def test_training_worker_spm_artifact_and_completed(
             "batch_size": 1,
             "learning_rate": 5e-4,
             "tokenizer_id": tok_id,
-            "corpus_path": str(corpus),
+            "corpus_file_id": "deadbeef",
         },
     }
+
+    # Stub fetcher to map file id to local corpus
+    from model_trainer.core.services.data import corpus_fetcher as cf
+
+    class _CF:
+        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+            pass
+
+        def fetch(self: _CF, fid: str) -> Path:
+            return corpus
+
+    monkeypatch.setattr(cf, "CorpusFetcher", _CF)
 
     tw.process_train_job(payload)
     assert fake.get("runs:status:run-complete") == "completed"

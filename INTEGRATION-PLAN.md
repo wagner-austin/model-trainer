@@ -43,7 +43,7 @@ DiscordBot Wiring
 - Slash `/train_model` command enqueues training and confirms with run/job IDs.
 
 Railway
-- Two services: `api` (uvicorn) and `worker` (rq worker), plugin: `redis` — see `Model-Trainer/DEPLOYING_RAILWAY.md`.
+- Two services: `api` (hypercorn) and `worker` (rq worker), plugin: `redis` - see `Model-Trainer/DEPLOYING_RAILWAY.md`.
 - Use Docker builder with `server/Dockerfile` build targets: `api` and `worker`.
 - Env: `REDIS_URL`, `SECURITY__API_KEY`, `APP__ARTIFACTS_ROOT`, `APP__RUNS_ROOT`, `APP__LOGS_ROOT`.
 

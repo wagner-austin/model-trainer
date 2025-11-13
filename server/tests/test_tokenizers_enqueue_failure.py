@@ -22,7 +22,7 @@ def test_tokenizers_enqueue_returns_none_results_in_500(monkeypatch: MonkeyPatch
         "method": "bpe",
         "vocab_size": 128,
         "min_frequency": 1,
-        "corpus_path": "/tmp/unused",
+        "corpus_file_id": "deadbeef",
         "holdout_fraction": 0.1,
         "seed": 1,
     }

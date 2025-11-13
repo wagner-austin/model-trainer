@@ -6,6 +6,7 @@ from model_trainer.api.schemas.runs import TrainRequest
 from model_trainer.core.config.settings import Settings
 from model_trainer.core.services.queue.rq_adapter import RQEnqueuer, RQSettings
 from model_trainer.orchestrators.training_orchestrator import TrainingOrchestrator
+from pydantic_core import ValidationError
 
 
 class _FakeEnq(RQEnqueuer):
@@ -19,7 +20,7 @@ def _orch() -> TrainingOrchestrator:
 
 
 def test_train_request_missing_corpus_file_id_raises_validation_error() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         _ = TrainRequest(
             model_family="gpt2",
             model_size="s",
@@ -32,7 +33,7 @@ def test_train_request_missing_corpus_file_id_raises_validation_error() -> None:
 
 
 def test_train_request_extra_corpus_path_forbidden() -> None:
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         _ = TrainRequest(
             model_family="gpt2",
             model_size="s",

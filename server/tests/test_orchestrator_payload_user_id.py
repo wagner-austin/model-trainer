@@ -34,9 +34,10 @@ def test_orchestrator_threads_user_id(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(enq, "enqueue_train", _fake_enqueue_train)
     orch = TrainingOrchestrator(settings=s, redis_client=r, enqueuer=enq, model_registry=None)
     # Stub CorpusFetcher to avoid network and provide a local path
-    from model_trainer.core.services.data import corpus_fetcher as cf
-    from pathlib import Path
     import tempfile
+    from pathlib import Path
+
+    from model_trainer.core.services.data import corpus_fetcher as cf
 
     class _CF:
         def __init__(self: object, *args: object, **kwargs: object) -> None:

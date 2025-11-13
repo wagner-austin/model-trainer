@@ -18,41 +18,29 @@ def _orch() -> TrainingOrchestrator:
     return TrainingOrchestrator(settings=Settings(), redis_client=fake, enqueuer=_FakeEnq())
 
 
-def test_enqueue_training_raises_when_neither_corpus_source_provided() -> None:
-    orch = _orch()
-    req = TrainRequest(
-        model_family="gpt2",
-        model_size="s",
-        max_seq_len=16,
-        num_epochs=1,
-        batch_size=1,
-        learning_rate=1e-3,
-        corpus_path=None,
-        corpus_file_id=None,
-        tokenizer_id="tok",
-    )
-    from model_trainer.core.errors.base import AppError, ErrorCode
-
-    with pytest.raises(AppError) as ei:
-        _ = orch.enqueue_training(req)
-    assert ei.value.code == ErrorCode.CONFIG_INVALID
+def test_train_request_missing_corpus_file_id_raises_validation_error() -> None:
+    with pytest.raises(Exception):
+        _ = TrainRequest(
+            model_family="gpt2",
+            model_size="s",
+            max_seq_len=16,
+            num_epochs=1,
+            batch_size=1,
+            learning_rate=1e-3,
+            tokenizer_id="tok",
+        )
 
 
-def test_enqueue_training_raises_when_both_corpus_sources_provided() -> None:
-    orch = _orch()
-    req = TrainRequest(
-        model_family="gpt2",
-        model_size="s",
-        max_seq_len=16,
-        num_epochs=1,
-        batch_size=1,
-        learning_rate=1e-3,
-        corpus_path="/path.txt",
-        corpus_file_id="deadbeef",
-        tokenizer_id="tok",
-    )
-    from model_trainer.core.errors.base import AppError, ErrorCode
-
-    with pytest.raises(AppError) as ei:
-        _ = orch.enqueue_training(req)
-    assert ei.value.code == ErrorCode.CONFIG_INVALID
+def test_train_request_extra_corpus_path_forbidden() -> None:
+    with pytest.raises(Exception):
+        _ = TrainRequest(
+            model_family="gpt2",
+            model_size="s",
+            max_seq_len=16,
+            num_epochs=1,
+            batch_size=1,
+            learning_rate=1e-3,
+            corpus_file_id="deadbeef",
+            corpus_path="/path.txt",
+            tokenizer_id="tok",
+        )

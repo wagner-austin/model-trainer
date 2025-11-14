@@ -61,5 +61,6 @@ checkpoints/
 /runs/
 /corpus/
 
-# Windows reserved path that can sometimes appear due to tooling
+# Windows reserved paths that can sometimes appear due to tooling
 server/nul
+nul

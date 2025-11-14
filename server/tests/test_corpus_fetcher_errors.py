@@ -1,43 +1,59 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
-import httpx
 import pytest
 from model_trainer.core.services.data.corpus_fetcher import CorpusFetcher
+from model_trainer.core.services.data.data_bank_client import (
+    AuthorizationError,
+    HeadInfo,
+    NotFoundError,
+)
 
 
 def test_fetcher_head_404_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     f = CorpusFetcher("http://db", "k", tmp_path)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(404, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    monkeypatch.setattr(httpx, "head", _head)
-    with pytest.raises(httpx.HTTPStatusError):
+    class _C:
+        def __init__(self: _C, *args: object, **kwargs: object) -> None:
+            pass
+
+        def head(self: _C, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            raise NotFoundError("not found")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C)
+    with pytest.raises(NotFoundError):
         _ = f.fetch("deadbeef")
 
 
 def test_fetcher_get_401_raises(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     f = CorpusFetcher("http://db", "k", tmp_path)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={"Content-Length": "10"}, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        req = httpx.Request(method, url, headers=headers)
-        yield httpx.Response(401, request=req)
+    class _C2:
+        def __init__(self: _C2, *args: object, **kwargs: object) -> None:
+            pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
-    with pytest.raises(httpx.HTTPStatusError):
+        def head(self: _C2, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=10, etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C2,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            raise AuthorizationError("unauthorized")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C2)
+    with pytest.raises(AuthorizationError):
         _ = f.fetch("deadbeef")
 
 
@@ -45,18 +61,30 @@ def test_fetcher_size_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     f = CorpusFetcher("http://db", "k", tmp_path)
     payload = b"abcde"
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        return httpx.Response(200, headers={"Content-Length": "10"})
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        req = httpx.Request(method, url, headers=headers)
-        yield httpx.Response(200, content=payload, request=req)
+    class _C3:
+        def __init__(self: _C3, *args: object, **kwargs: object) -> None:
+            pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+        def head(self: _C3, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=10, etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C3,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            with dest.open("wb") as out:
+                out.write(payload)
+            return HeadInfo(size=10, etag="abcd", content_type="text/plain")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C3)
     with pytest.raises(RuntimeError):
         _ = f.fetch("deadbeef")
 
@@ -65,18 +93,30 @@ def test_fetcher_resume_size_mismatch(tmp_path: Path, monkeypatch: pytest.Monkey
     f = CorpusFetcher("http://db", "k", tmp_path)
     payload = b"abc"
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        # Expect total 6 bytes, but we'll only provide 3 including resume
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={"Content-Length": "6"}, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        # Simulate Range resume but return empty to force mismatch
-        req = httpx.Request(method, url, headers=headers)
-        yield httpx.Response(200, content=b"", request=req)
+    class _C4:
+        def __init__(self: _C4, *args: object, **kwargs: object) -> None:
+            pass
+
+        def head(self: _C4, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            # Expect total 6 bytes, but we'll only provide 3 including resume
+            return HeadInfo(size=6, etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C4,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            # Simulate Range resume but return empty to force mismatch
+            with dest.open("ab" if dest.exists() else "wb"):
+                pass
+            return HeadInfo(size=6, etag="abcd", content_type="text/plain")
 
     # Seed partial temp file to trigger Range branch
     fid = "resume"
@@ -84,8 +124,7 @@ def test_fetcher_resume_size_mismatch(tmp_path: Path, monkeypatch: pytest.Monkey
     tmp = cache_path.with_suffix(".tmp")
     tmp.write_bytes(payload)
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C4)
     with pytest.raises(RuntimeError):
         _ = f.fetch(fid)
 
@@ -95,20 +134,30 @@ def test_fetcher_head_without_content_length_allows_zero(
 ) -> None:
     f = CorpusFetcher("http://db", "k", tmp_path)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        # No Content-Length header returned
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={}, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        req = httpx.Request(method, url, headers=headers)
-        # Empty body
-        yield httpx.Response(200, content=b"", request=req)
+    class _C5:
+        def __init__(self: _C5, *args: object, **kwargs: object) -> None:
+            pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+        def head(self: _C5, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            # No Content-Length equivalent: return zero size
+            return HeadInfo(size=0, etag="", content_type="application/octet-stream")
+
+        def download_to_path(
+            self: _C5,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            with dest.open("wb") as out:
+                out.write(b"")
+            return HeadInfo(size=0, etag="", content_type="application/octet-stream")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C5)
     out = f.fetch("zero")
     assert out.exists() and out.stat().st_size == 0

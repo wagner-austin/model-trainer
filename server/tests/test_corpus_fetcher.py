@@ -1,29 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 
-import httpx
 import pytest
 from model_trainer.core.services.data.corpus_fetcher import CorpusFetcher
-
-
-def _make_transport(data: bytes) -> httpx.MockTransport:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if request.method == "HEAD":
-            return httpx.Response(200, headers={"Content-Length": str(len(data)), "ETag": ""})
-        if request.method == "GET":
-            # Range handling is emulated by precomputing the expected start via
-            # the temporary file size; since the transport cannot access local
-            # state, tests that need resume will supply a custom stream.
-            part = data
-            status = 200
-            headers = {"Content-Length": str(len(part))}
-            return httpx.Response(status, content=part, headers=headers)
-        return httpx.Response(405)
-
-    return httpx.MockTransport(handler)
+from model_trainer.core.services.data.data_bank_client import (
+    HeadInfo,
+)
 
 
 @pytest.mark.parametrize("resume", [False, True])
@@ -34,34 +17,35 @@ def test_fetcher_download_and_cache_resume(
     cache = tmp_path / "cache"
     f = CorpusFetcher("http://test", "k", cache)
 
-    transport = _make_transport(payload)
-    client = httpx.Client(transport=transport)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        return client.head(url, headers=headers, timeout=timeout)
-
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        # Emulate Range behavior deterministically by inspecting any
-        # pre-existing temporary file created by the fetcher.
-        fid = url.rsplit("/", 1)[-1]
-        cache_path = cache / f"{fid}.txt"
-        tmp = cache_path.with_suffix(".tmp")
-        start = tmp.stat().st_size if tmp.exists() else 0
-        part = payload[start:]
-        status = 206 if start > 0 else 200
-        headers2 = {"Content-Length": str(len(part))}
-        req = httpx.Request("GET", url, headers=headers)
-        resp = httpx.Response(status, content=part, headers=headers2, request=req)
-        try:
-            yield resp
-        finally:
+    class _C:
+        def __init__(self: _C, *args: object, **kwargs: object) -> None:
             pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+        def head(self: _C, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            start = dest.stat().st_size if dest.exists() else 0
+            if start > 0:
+                with dest.open("ab") as f_bin:
+                    f_bin.write(payload[start:])
+            else:
+                with dest.open("wb") as f_bin:
+                    f_bin.write(payload)
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C)
 
     fid = "deadbeef"
     cache_path = cache / f"{fid}.txt"
@@ -88,11 +72,14 @@ def test_fetcher_uses_cache_without_network(
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     cache_path.write_text("cached", encoding="utf-8")
 
-    # If HEAD is invoked, raise to fail the test
-    def _head(_url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        raise AssertionError("HEAD should not be called on cache hit")
+    # If DataBankClient is created, fail the test
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    monkeypatch.setattr(httpx, "head", _head)
+    class _C2:
+        def __init__(self: _C2, *args: object, **kwargs: object) -> None:
+            raise AssertionError("DataBankClient should not be constructed on cache hit")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C2)
 
     out = f.fetch(fid)
     assert out == cache_path

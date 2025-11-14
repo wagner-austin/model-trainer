@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
-from contextlib import contextmanager
 from pathlib import Path
 from typing import TypeVar
 
-import httpx
 import pytest
 from model_trainer.core.services.data.corpus_fetcher import CorpusFetcher
+from model_trainer.core.services.data.data_bank_client import HeadInfo
 
 _T = TypeVar("_T")
 
@@ -58,19 +56,32 @@ def test_fetcher_logs_fetch_start(
     cache = tmp_path / "cache"
     f = CorpusFetcher("http://test", "k", cache)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={"Content-Length": str(len(payload))}, request=req)
+    # Monkeypatch DataBankClient methods used by fetcher
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        req = httpx.Request("GET", url, headers=headers)
-        yield httpx.Response(200, content=payload, request=req)
+    class _C:
+        def __init__(self: _C, *args: object, **kwargs: object) -> None:
+            pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+        def head(self: _C, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            with dest.open("wb") as out:
+                out.write(payload)
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C)
 
     with caplog.at_level(logging.INFO):
         _ = f.fetch("test_file")
@@ -91,19 +102,30 @@ def test_fetcher_logs_head_request(
     cache = tmp_path / "cache"
     f = CorpusFetcher("http://test", "k", cache)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={"Content-Length": str(len(payload))}, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        req = httpx.Request("GET", url, headers=headers)
-        yield httpx.Response(200, content=payload, request=req)
+    class _C2:
+        def __init__(self: _C2, *args: object, **kwargs: object) -> None:
+            pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+        def head(self: _C2, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C2,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            with dest.open("wb") as out:
+                out.write(payload)
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C2)
 
     with caplog.at_level(logging.INFO):
         _ = f.fetch("test_file")
@@ -120,19 +142,30 @@ def test_fetcher_logs_download_start(
     cache = tmp_path / "cache"
     f = CorpusFetcher("http://test", "k", cache)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={"Content-Length": str(len(payload))}, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        req = httpx.Request("GET", url, headers=headers)
-        yield httpx.Response(200, content=payload, request=req)
+    class _C3:
+        def __init__(self: _C3, *args: object, **kwargs: object) -> None:
+            pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+        def head(self: _C3, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C3,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            with dest.open("wb") as out:
+                out.write(payload)
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C3)
 
     with caplog.at_level(logging.INFO):
         _ = f.fetch("test_file")
@@ -150,19 +183,30 @@ def test_fetcher_logs_completion(
     cache = tmp_path / "cache"
     f = CorpusFetcher("http://test", "k", cache)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={"Content-Length": str(len(payload))}, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        req = httpx.Request("GET", url, headers=headers)
-        yield httpx.Response(200, content=payload, request=req)
+    class _C:
+        def __init__(self: _C, *args: object, **kwargs: object) -> None:
+            pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+        def head(self: _C, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            with dest.open("wb") as out:
+                out.write(payload)
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C)
 
     with caplog.at_level(logging.INFO):
         _ = f.fetch("test_file")
@@ -182,21 +226,7 @@ def test_fetcher_logs_resume(
     cache = tmp_path / "cache"
     f = CorpusFetcher("http://test", "k", cache)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={"Content-Length": str(len(payload))}, request=req)
-
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        fid = url.rsplit("/", 1)[-1]
-        cache_path = cache / f"{fid}.txt"
-        tmp = cache_path.with_suffix(".tmp")
-        start = tmp.stat().st_size if tmp.exists() else 0
-        part = payload[start:]
-        req = httpx.Request("GET", url, headers=headers)
-        yield httpx.Response(200 if start == 0 else 206, content=part, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
     # Create partial temp file
     fid = "resume_file"
@@ -205,8 +235,30 @@ def test_fetcher_logs_resume(
     tmp.parent.mkdir(parents=True, exist_ok=True)
     tmp.write_bytes(payload[:4])
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+    class _C:
+        def __init__(self: _C, *args: object, **kwargs: object) -> None:
+            pass
+
+        def head(self: _C, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            # Append remaining bytes
+            start = dest.stat().st_size if dest.exists() else 0
+            with dest.open("ab" if start > 0 else "wb") as out:
+                out.write(payload[start:])
+            return HeadInfo(size=len(payload), etag="abcd", content_type="text/plain")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C)
 
     with caplog.at_level(logging.INFO):
         _ = f.fetch(fid)
@@ -224,20 +276,30 @@ def test_fetcher_logs_size_mismatch_error(
     cache = tmp_path / "cache"
     f = CorpusFetcher("http://test", "k", cache)
 
-    def _head(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
-        # Claim bigger size
-        req = httpx.Request("HEAD", url, headers=headers)
-        return httpx.Response(200, headers={"Content-Length": "100"}, request=req)
+    import model_trainer.core.services.data.corpus_fetcher as cf_mod
 
-    @contextmanager
-    def _stream(
-        method: str, url: str, *, headers: dict[str, str], timeout: float
-    ) -> Iterator[httpx.Response]:
-        req = httpx.Request("GET", url, headers=headers)
-        yield httpx.Response(200, content=payload, request=req)
+    class _C:
+        def __init__(self: _C, *args: object, **kwargs: object) -> None:
+            pass
 
-    monkeypatch.setattr(httpx, "head", _head)
-    monkeypatch.setattr(httpx, "stream", _stream)
+        def head(self: _C, file_id: str, *, request_id: str | None = None) -> HeadInfo:
+            return HeadInfo(size=100, etag="abcd", content_type="text/plain")
+
+        def download_to_path(
+            self: _C,
+            file_id: str,
+            dest: Path,
+            *,
+            resume: bool = True,
+            request_id: str | None = None,
+            verify_etag: bool = True,
+            chunk_size: int = 1024 * 1024,
+        ) -> HeadInfo:
+            with dest.open("wb") as out:
+                out.write(payload)
+            return HeadInfo(size=100, etag="abcd", content_type="text/plain")
+
+    monkeypatch.setattr(cf_mod, "DataBankClient", _C)
 
     with caplog.at_level(logging.ERROR), pytest.raises(RuntimeError):
         _ = f.fetch("bad_file")

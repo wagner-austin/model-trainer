@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Final
 
-import httpx
+from .data_bank_client import DataBankClient
 
 _logger: Final[logging.Logger] = logging.getLogger(__name__)
 
@@ -45,16 +45,11 @@ class CorpusFetcher:
         )
         start_time = time.time()
 
-        headers = {"X-API-Key": self._api_key}
         url = f"{self._api_url}/files/{file_id}"
-
         _logger.info("Sending HEAD request to data bank", extra={"file_id": file_id, "url": url})
-        head_resp = httpx.head(url, headers=headers, timeout=30.0)
-        head_resp.raise_for_status()
-
-        # HEAD headers are case-insensitive, normalize
-        hdrs = {k.lower(): v for (k, v) in head_resp.headers.items()}
-        expected_size = int(hdrs.get("content-length", "0"))
+        client = DataBankClient(base_url=self._api_url, api_key=self._api_key, timeout_seconds=30.0)
+        head = client.head(file_id, request_id=file_id)
+        expected_size = int(head.size)
         _logger.info(
             "HEAD request successful",
             extra={"file_id": file_id, "expected_size": expected_size},
@@ -63,7 +58,6 @@ class CorpusFetcher:
         temp_path = cache_path.with_suffix(".tmp")
         start = temp_path.stat().st_size if temp_path.exists() else 0
         if start > 0:
-            headers["Range"] = f"bytes={start}-"
             _logger.info(
                 "Resuming partial download",
                 extra={"file_id": file_id, "resume_from": start},
@@ -73,16 +67,8 @@ class CorpusFetcher:
             "Starting corpus download",
             extra={"file_id": file_id, "url": url, "expected_size": expected_size},
         )
-        with httpx.stream("GET", url, headers=headers, timeout=600.0) as resp:
-            resp.raise_for_status()
-            if start > 0:
-                with temp_path.open("ab") as f:
-                    for chunk in resp.iter_bytes(chunk_size=1024 * 1024):
-                        f.write(chunk)
-            else:
-                with temp_path.open("wb") as f:
-                    for chunk in resp.iter_bytes(chunk_size=1024 * 1024):
-                        f.write(chunk)
+        # Download with resume and verify ETag integrity
+        client.download_to_path(file_id, temp_path, resume=True, request_id=file_id, verify_etag=True)
 
         if temp_path.stat().st_size != expected_size:
             _logger.error(

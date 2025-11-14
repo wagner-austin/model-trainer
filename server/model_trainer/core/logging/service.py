@@ -45,7 +45,13 @@ class LoggingService:
 
     @classmethod
     def create(cls: type[LoggingService]) -> LoggingService:
-        return cls(base_logger=logging.getLogger("model_trainer"))
+        logger = logging.getLogger("model_trainer")
+        # Ensure the application logger emits records for info-level events
+        # regardless of the global root configuration. If the logger has not
+        # been configured yet (level NOTSET), set a sensible default once.
+        if logger.level == logging.NOTSET:
+            logger.setLevel(logging.INFO)
+        return cls(base_logger=logger)
 
     def adapter(
         self: LoggingService,

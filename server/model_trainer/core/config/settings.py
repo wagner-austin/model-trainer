@@ -65,6 +65,40 @@ class RQConfig(BaseSettings):
     }
 
 
+class CleanupConfig(BaseSettings):
+    enabled: bool = True
+    verify_upload: bool = True
+    grace_period_seconds: int = 0
+    dry_run: bool = False
+
+    model_config = {
+        "extra": "forbid",
+        "env_nested_delimiter": "__",
+    }
+
+
+class CorpusCacheCleanupConfig(BaseSettings):
+    enabled: bool = False
+    max_bytes: int = 10 * 1024 * 1024 * 1024  # 10 GiB
+    min_free_bytes: int = 2 * 1024 * 1024 * 1024  # 2 GiB
+    eviction_policy: Literal["lru", "oldest"] = "lru"
+
+    model_config = {
+        "extra": "forbid",
+        "env_nested_delimiter": "__",
+    }
+
+
+class TokenizerCleanupConfig(BaseSettings):
+    enabled: bool = False
+    min_unused_days: int = 30
+
+    model_config = {
+        "extra": "forbid",
+        "env_nested_delimiter": "__",
+    }
+
+
 class AppConfig(BaseSettings):
     data_root: str = "/data"
     artifacts_root: str = "/data/artifacts"
@@ -74,6 +108,9 @@ class AppConfig(BaseSettings):
     tokenizer_sample_max_lines: int = 10000
     data_bank_api_url: str = ""
     data_bank_api_key: str = ""
+    cleanup: CleanupConfig = CleanupConfig()
+    corpus_cache_cleanup: CorpusCacheCleanupConfig = CorpusCacheCleanupConfig()
+    tokenizer_cleanup: TokenizerCleanupConfig = TokenizerCleanupConfig()
 
     model_config = {
         "extra": "forbid",

@@ -54,6 +54,7 @@ checkpoints/
 
 # Allow source code under services/data
 !server/model_trainer/core/services/data/
+!server/tests/core/services/data/
 
 # Artifacts and runs (generated at runtime)
 /artifacts/

@@ -122,6 +122,7 @@ def train_prepared_gpt2(
         yield from loader
 
     for epoch in range(cfg.num_epochs):
+        epoch_step_start = step
         for batch in _iter_batches(dataloader):
             if cancelled():
                 was_cancelled = True
@@ -141,7 +142,9 @@ def train_prepared_gpt2(
                 redis_hb(time.time())
         if was_cancelled:
             break
-        if progress is not None:
+        # When an epoch yields no batches, emit a single progress
+        # callback so callers can observe the end-of-epoch state.
+        if progress is not None and step == epoch_step_start:
             progress(step, epoch, last_loss)
 
     out_dir = str(model_dir(settings, run_id))

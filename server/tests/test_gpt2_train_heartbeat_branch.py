@@ -121,9 +121,13 @@ def test_train_prepared_gpt2_calls_heartbeat_every_10_steps(
     monkeypatch.setattr(gtrain, "DataLoader", _DL, raising=True)
 
     hb: list[float] = []
+    progress_calls: list[tuple[int, int, float]] = []
 
     def _hb(ts: float) -> None:
         hb.append(ts)
+
+    def _progress(step: int, epoch: int, loss: float) -> None:
+        progress_calls.append((step, epoch, loss))
 
     out = gtrain.train_prepared_gpt2(
         prepared,
@@ -132,9 +136,11 @@ def test_train_prepared_gpt2_calls_heartbeat_every_10_steps(
         run_id="r-hb",
         redis_hb=_hb,
         cancelled=lambda: False,
-        progress=None,
+        progress=_progress,
     )
 
     # Expect exactly one heartbeat at step == 10 (line 141)
     assert len(hb) == 1
+    # Progress callback should be invoked once per batch in inner loop.
+    assert len(progress_calls) == out.steps
     assert out.steps == 10

@@ -13,9 +13,10 @@ from ..core.config.settings import Settings
 from ..core.contracts.compute import LocalCPUProvider
 from ..core.contracts.model import ModelTrainConfig
 from ..core.contracts.queue import EvalJobPayload, TrainJobPayload, TrainRequestPayload
-from ..core.infra.paths import model_dir
+from ..core.infra.paths import model_dir, models_dir
 from ..core.services.container import ServiceContainer
 from ..core.services.data import corpus_fetcher as corpus_fetcher_mod
+from ..core.services.data.artifact_downloader import ArtifactDownloader
 from ..core.services.tokenizer.bpe_backend import BPEBackend
 from ..core.services.tokenizer.spm_backend import SentencePieceBackend
 from ..events.trainer import encode_event
@@ -173,6 +174,21 @@ def _emit_failed_event(
     )
 
 
+def _upload_and_persist_pointer(
+    settings: Settings, r: redis.Redis[str], run_id: str, out_dir: str
+) -> None:
+    from pathlib import Path as _Path
+
+    from ..core.services.data import artifact_uploader as _uploader_mod
+
+    uploader = _uploader_mod.ArtifactUploader(
+        api_url=settings.app.data_bank_api_url,
+        api_key=settings.app.data_bank_api_key,
+    )
+    fid = uploader.upload_dir(_Path(out_dir), name=f"model-{run_id}", request_id=run_id)
+    r.set(f"runs:artifact:{run_id}:file_id", fid)
+
+
 def process_train_job(payload: TrainJobPayload) -> None:
     # Re-initialize logging in RQ subprocess (config lost after execvp in rq_worker.py)
     from ..core.logging.setup import setup_logging
@@ -278,11 +294,14 @@ def process_train_job(payload: TrainJobPayload) -> None:
             )
             _emit_failed_event(r, run_id, user_id, "Training cancelled", "canceled")
         else:
-            r.set(f"{STATUS_KEY_PREFIX}{run_id}", "completed")
-            r.set(f"{MSG_KEY_PREFIX}{run_id}", "Training completed")
-            # Save weights via backend lifecycle
+            # Save weights via backend lifecycle, then upload artifact to data-bank-api
             out_dir = str(model_dir(settings, run_id))
             _ = backend.save(prepared, out_dir)
+            _upload_and_persist_pointer(settings, r, run_id, out_dir)
+
+            # Mark run completed before invoking cleanup so status is terminal
+            r.set(f"{STATUS_KEY_PREFIX}{run_id}", "completed")
+            r.set(f"{MSG_KEY_PREFIX}{run_id}", "Training completed")
             log.info(
                 "Training completed run_id=%s loss=%.4f perplexity=%.2f steps=%d",
                 run_id,
@@ -290,6 +309,12 @@ def process_train_job(payload: TrainJobPayload) -> None:
                 result.perplexity,
                 result.steps,
             )
+
+            from ..core.services.storage.artifact_cleanup import ArtifactCleanupService
+
+            cleanup_service = ArtifactCleanupService(settings=settings, redis_client=r)
+            _ = cleanup_service.cleanup_run_artifacts(run_id, out_dir)
+
             _emit_completed_event(
                 r,
                 run_id,
@@ -334,19 +359,13 @@ def process_eval_job(payload: EvalJobPayload) -> None:
     split = payload["split"]
     running = _EvalCacheModel(status="running", split=split)
     r.set(f"{EVAL_KEY_PREFIX}{run_id}", running.model_dump_json())
-    # Evaluate using saved model and conservative defaults if full cfg unavailable
+    # Evaluate using model artifacts stored in data-bank-api.
     # Load training manifest for this run to get tokenizer_id and params
     from pathlib import Path
 
     artifacts_root = settings.app.artifacts_root
     manifest_path = Path(artifacts_root) / "models" / run_id / "manifest.json"
-    if not manifest_path.exists():
-        r.set(
-            f"{EVAL_KEY_PREFIX}{run_id}",
-            _EvalCacheModel(status="failed", split=split).model_dump_json(),
-        )
-        logging.getLogger(__name__).error("Eval failed: manifest missing for run_id=%s", run_id)
-        return
+    models_root = models_dir(settings)
 
     class _ManifestVersions(BaseModel):
         torch: str
@@ -384,19 +403,36 @@ def process_eval_job(payload: EvalJobPayload) -> None:
 
         model_config = {"extra": "forbid", "validate_assignment": True}
 
-    manifest_text = manifest_path.read_text(encoding="utf-8")
-    manifest = _TrainingManifestModel.model_validate_json(manifest_text)
-    cfg = ModelTrainConfig(
-        model_family=manifest.model_family,
-        model_size=manifest.model_size,
-        max_seq_len=manifest.max_seq_len,
-        num_epochs=manifest.epochs,
-        batch_size=manifest.batch_size,
-        learning_rate=manifest.learning_rate,
-        tokenizer_id=manifest.tokenizer_id,
-        corpus_path=manifest.corpus_path,
-    )
     try:
+        # Resolve model artifact pointer from Redis
+        file_id_key = f"runs:artifact:{run_id}:file_id"
+        file_id = r.get(file_id_key)
+        if not isinstance(file_id, str) or file_id.strip() == "":
+            raise RuntimeError("artifact pointer not found for eval")
+
+        # Download and materialize model directory from data-bank-api
+        downloader = ArtifactDownloader(
+            api_url=settings.app.data_bank_api_url,
+            api_key=settings.app.data_bank_api_key,
+        )
+        _ = downloader.download_and_extract(file_id.strip(), run_id=run_id, target_root=models_root)
+
+        if not manifest_path.exists():
+            raise FileNotFoundError(f"manifest missing for run_id={run_id}")
+
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+        manifest = _TrainingManifestModel.model_validate_json(manifest_text)
+        cfg = ModelTrainConfig(
+            model_family=manifest.model_family,
+            model_size=manifest.model_size,
+            max_seq_len=manifest.max_seq_len,
+            num_epochs=manifest.epochs,
+            batch_size=manifest.batch_size,
+            learning_rate=manifest.learning_rate,
+            tokenizer_id=manifest.tokenizer_id,
+            corpus_path=manifest.corpus_path,
+        )
+
         container2 = ServiceContainer.from_settings(settings)
         backend = container2.model_registry.get("gpt2")
         res = backend.evaluate(run_id=run_id, cfg=cfg, settings=settings)

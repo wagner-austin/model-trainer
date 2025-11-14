@@ -5,6 +5,7 @@ from typing import Final
 
 import redis
 
+from ..api.schemas.pointers import ArtifactPointer
 from ..api.schemas.runs import (
     EvaluateRequest,
     EvaluateResponse,
@@ -139,6 +140,19 @@ class TrainingOrchestrator:
         return EvaluateResponse(
             run_id=run_id, split=req.split, status="queued", loss=None, perplexity=None
         )
+
+    def get_artifact_pointer(self: TrainingOrchestrator, run_id: str) -> ArtifactPointer:
+        key = f"runs:artifact:{run_id}:file_id"
+        fid = get_with_retry(self._redis, key)
+        if fid is None or str(fid).strip() == "":
+            from ..core.errors.base import AppError, ErrorCode
+
+            self._logger.info(
+                "artifact pointer not found",
+                extra={"event": "artifact_not_found", "run_id": run_id},
+            )
+            raise AppError(ErrorCode.DATA_NOT_FOUND, "artifact pointer not found")
+        return ArtifactPointer(storage="data-bank", file_id=str(fid))
 
     def get_evaluation(self: TrainingOrchestrator, run_id: str) -> EvaluateResponse:
         raw = get_with_retry(self._redis, f"{EVAL_KEY_PREFIX}{run_id}")

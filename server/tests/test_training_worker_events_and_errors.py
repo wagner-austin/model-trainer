@@ -12,6 +12,16 @@ from model_trainer.core.contracts.queue import TrainJobPayload
 from model_trainer.worker import training_worker as tw
 
 
+def _configure_worker_roots(tmp_path: Path) -> Path:
+    artifacts_root = tmp_path / "artifacts"
+    runs_root = tmp_path / "runs"
+    logs_root = tmp_path / "logs"
+    os.environ["APP__ARTIFACTS_ROOT"] = str(artifacts_root)
+    os.environ["APP__RUNS_ROOT"] = str(runs_root)
+    os.environ["APP__LOGS_ROOT"] = str(logs_root)
+    return artifacts_root
+
+
 def test_emit_events_helpers_publish() -> None:
     # Use a real FakeRedis to exercise publish path without failures
     r = fakeredis.FakeRedis(decode_responses=True)
@@ -36,10 +46,7 @@ def test_emit_events_helpers_publish() -> None:
 def test_process_train_job_sets_status_message_on_exception(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Arrange: artifacts and payload
-    os.environ["APP__ARTIFACTS_ROOT"] = str(tmp_path / "artifacts")
-    os.environ["APP__RUNS_ROOT"] = str(tmp_path / "runs")
-    os.environ["APP__LOGS_ROOT"] = str(tmp_path / "logs")
+    _configure_worker_roots(tmp_path)
 
     payload: TrainJobPayload = {
         "run_id": "run-exc",
@@ -55,8 +62,8 @@ def test_process_train_job_sets_status_message_on_exception(
             "corpus_file_id": "deadbeef",
         },
     }
-    (tmp_path / "corpus").mkdir()
-    # Stub fetcher to return local corpus dir
+    corpus_root = tmp_path / "corpus"
+    corpus_root.mkdir()
     from model_trainer.core.services.data import corpus_fetcher as cf
 
     class _CF:
@@ -64,10 +71,11 @@ def test_process_train_job_sets_status_message_on_exception(
             pass
 
         def fetch(self: _CF, fid: str) -> Path:
-            return tmp_path / "corpus"
+            assert fid == "deadbeef"
+            return corpus_root
 
     monkeypatch.setattr(cf, "CorpusFetcher", _CF)
-    (tmp_path / "corpus" / "a.txt").write_text("hello\n", encoding="utf-8")
+    (corpus_root / "a.txt").write_text("hello\n", encoding="utf-8")
 
     # Fake redis and force .set on message key to raise, so we hit the nested except and re-raise
     client = fakeredis.FakeRedis(decode_responses=True)

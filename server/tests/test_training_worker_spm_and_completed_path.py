@@ -8,7 +8,80 @@ import pytest
 from model_trainer.core.config.settings import Settings
 from model_trainer.core.contracts.model import ModelTrainConfig
 from model_trainer.core.contracts.queue import TrainJobPayload
+from model_trainer.core.services.data import artifact_uploader as au
+from model_trainer.core.services.data import corpus_fetcher as cf
 from model_trainer.worker import training_worker as tw
+
+_CORPUS_PATH: Path | None = None
+
+
+class _Backend:
+    def prepare(
+        self: _Backend,
+        cfg: ModelTrainConfig,
+        settings: Settings,
+        *,
+        tokenizer: object,
+    ) -> object:
+        return object()
+
+    class _Res:
+        cancelled = False
+        loss = 0.9
+        perplexity = 1.5
+        steps = 10
+
+    def train(
+        self: _Backend,
+        cfg: ModelTrainConfig,
+        settings: Settings,
+        *,
+        run_id: str,
+        heartbeat: object,
+        cancelled: object,
+        prepared: object,
+        progress: object,
+    ) -> _Backend._Res:
+        # Exercise the worker's progress callback wrapper so that the
+        # training_worker._progress closure is covered.
+        if callable(progress):
+            progress(1, 0, 0.5)
+        return _Backend._Res()
+
+    def save(self: _Backend, prepared: object, out_dir: str) -> str:
+        Path(out_dir).mkdir(parents=True, exist_ok=True)
+        (Path(out_dir) / "weights.bin").write_bytes(b"\x00mock")
+        return out_dir
+
+
+class _Reg:
+    def get(self: _Reg, name: str) -> _Backend:
+        return _Backend()
+
+
+class _C:
+    def __init__(self: _C) -> None:
+        self.model_registry = _Reg()
+
+    @staticmethod
+    def from_settings(_: Settings) -> _C:
+        return _C()
+
+
+class _CF:
+    def __init__(self: _CF, *args: object, **kwargs: object) -> None:
+        pass
+
+    def fetch(self: _CF, fid: str) -> Path:
+        assert _CORPUS_PATH is not None
+        return _CORPUS_PATH
+
+
+class _U(au.ArtifactUploader):
+    def upload_dir(self: _U, dir_path: Path, *, name: str, request_id: str) -> str:
+        assert dir_path.exists() and dir_path.is_dir()
+        assert name.startswith("model-") and request_id == "run-complete"
+        return "deadbeef"
 
 
 def test_training_worker_spm_artifact_and_completed(
@@ -38,53 +111,6 @@ def test_training_worker_spm_artifact_and_completed(
     fake = fakeredis.FakeRedis(decode_responses=True)
     monkeypatch.setattr(tw, "_redis_client", lambda: fake)
 
-    # Stub ServiceContainer to return a backend that completes immediately
-    class _Backend:
-        def prepare(
-            self: _Backend,
-            cfg: ModelTrainConfig,
-            settings: Settings,
-            *,
-            tokenizer: object,
-        ) -> object:
-            return object()
-
-        class _Res:
-            cancelled = False
-            loss = 0.9
-            perplexity = 1.5
-            steps = 10
-
-        def train(
-            self: _Backend,
-            cfg: ModelTrainConfig,
-            settings: Settings,
-            *,
-            run_id: str,
-            heartbeat: object,
-            cancelled: object,
-            prepared: object,
-            progress: object,
-        ) -> _Backend._Res:
-            return _Backend._Res()
-
-        def save(self: _Backend, prepared: object, out_dir: str) -> str:
-            Path(out_dir).mkdir(parents=True, exist_ok=True)
-            (Path(out_dir) / "weights.bin").write_bytes(b"\x00mock")
-            return out_dir
-
-    class _Reg:
-        def get(self: _Reg, name: str) -> _Backend:
-            return _Backend()
-
-    class _C:
-        def __init__(self: _C) -> None:
-            self.model_registry = _Reg()
-
-        @staticmethod
-        def from_settings(_: Settings) -> _C:
-            return _C()
-
     monkeypatch.setattr(tw, "ServiceContainer", _C)
 
     payload: TrainJobPayload = {
@@ -103,19 +129,26 @@ def test_training_worker_spm_artifact_and_completed(
     }
 
     # Stub fetcher to map file id to local corpus
-    from model_trainer.core.services.data import corpus_fetcher as cf
-
-    class _CF:
-        def __init__(self: _CF, *args: object, **kwargs: object) -> None:
-            pass
-
-        def fetch(self: _CF, fid: str) -> Path:
-            return corpus
-
+    global _CORPUS_PATH
+    _CORPUS_PATH = corpus
     monkeypatch.setattr(cf, "CorpusFetcher", _CF)
 
+    # Stub artifact uploader to avoid real network, and assert pointer is stored
+    monkeypatch.setattr(au, "ArtifactUploader", _U)
+    # Provide required Data Bank config
+    os.environ["APP__DATA_BANK_API_URL"] = "http://data-bank-api.local"
+    os.environ["APP__DATA_BANK_API_KEY"] = "secret-key"
+
     tw.process_train_job(payload)
-    assert fake.get("runs:status:run-complete") == "completed"
-    assert fake.get("runs:msg:run-complete") == "Training completed"
+
+    status = fake.get("runs:status:run-complete")
+    msg = fake.get("runs:msg:run-complete")
+    # Pointer persisted for inference service
+    artifact_id = fake.get("runs:artifact:run-complete:file_id")
     out_dir = artifacts / "models" / "run-complete"
-    assert (out_dir / "weights.bin").exists()
+
+    assert status == "completed"
+    assert msg == "Training completed"
+    assert artifact_id == "deadbeef"
+    # Cleanup enabled by default: local artifact directory should be removed
+    assert not out_dir.exists()

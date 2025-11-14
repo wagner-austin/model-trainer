@@ -319,6 +319,38 @@ Notes:
 - There is no separate runtime `runs/` directory; per‑run manifests and logs live under `artifacts/models/<run_id>/`.
 
 
+### 13.1 Artifact Storage Policy
+
+Upload and cleanup lifecycle:
+
+1. Training completes and the model is saved to `/data/artifacts/models/{run_id}/`.
+2. The worker uploads the run directory to `data-bank-api` and receives a `file_id`.
+3. The worker persists `runs:artifact:{run_id}:file_id` in Redis and records the pointer in the run manifest.
+4. After upload and pointer persistence succeed, the local run directory is deleted by the `ArtifactCleanupService`, subject to `CleanupConfig`.
+
+Storage locations:
+
+- `data-bank-api` owns permanent storage for completed runs. Files are addressed by `file_id` and accessed via the `/files` API.
+- Local artifacts under `/data/artifacts/models/{run_id}` are temporary and treated as an implementation detail of the training worker.
+
+Configuration:
+
+- `APP__CLEANUP__ENABLED=true|false` controls whether post-upload cleanup runs.
+- `APP__CLEANUP__VERIFY_UPLOAD=true|false` controls whether Redis must contain `file_id` before cleanup.
+- `APP__CLEANUP__DRY_RUN=true|false` logs what would be deleted without deleting.
+- `APP__CLEANUP__GRACE_PERIOD_SECONDS=N` waits `N` seconds between upload and cleanup.
+
+Observability:
+
+- Cleanup events emit structured logs with fields such as:
+  - `event`: `"cleanup_dry_run"`, `"cleanup_completed"`, `"cleanup_failed"`.
+  - `run_id`, `path`, `bytes_freed`, `files_deleted`.
+
+Corpus cache and tokenizer artifacts:
+
+- Corpus cache entries live under `Settings.app.data_root / "corpus_cache"` and are treated as pure cache. They can be reclaimed by `CorpusCacheCleanupService` according to size and free-space thresholds in `CorpusCacheCleanupConfig`.
+- Tokenizer artifacts live under `artifacts/tokenizers/{tokenizer_id}`. `TokenizerCleanupService` can delete tokenizers that are not referenced in any model manifest and older than `TokenizerCleanupConfig.min_unused_days`.
+
 ## 14. API Surface (MVP)
 
 - `POST /tokenizers/train` — start tokenizer training

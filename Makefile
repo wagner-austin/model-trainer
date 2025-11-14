@@ -9,13 +9,15 @@ UI_DIR := ui
 PROJECT_NAME := modeltrainer
 COMPOSE := docker compose -p $(PROJECT_NAME) -f .\docker-compose.yml
 
-.PHONY: help lint guards test check start stop restart clean
+.PHONY: help lint guards test check start stop restart clean cleanup-corpus-cache cleanup-tokenizers
 
 help:
 	@echo "Targets:"
 	@echo "  make lint        - Ruff --fix, format, mypy strict, guard checks"
 	@echo "  make test        - Run tests"
 	@echo "  make check       - Lint, then run tests"
+	@echo "  make cleanup-corpus-cache - Run corpus cache cleanup maintenance script"
+	@echo "  make cleanup-tokenizers   - Run tokenizer cleanup maintenance script"
 	@echo "  make start       - Build and start Docker stack (Redis, API, Worker)"
 	@echo "  make stop        - Gracefully stop Docker stack"
 	@echo "  make restart     - Restart Docker stack"
@@ -28,10 +30,16 @@ guards:
 	python .\scripts\guard.py
 
 test:
-	if (Test-Path "$(PY_DIR)\pyproject.toml") { Write-Host "[test-python] pytest with coverage (branches)" -ForegroundColor Cyan; Push-Location "$(PY_DIR)"; poetry run pytest --cov=model_trainer --cov-branch --cov-report=term-missing -v; Pop-Location; } else { Write-Host "[test-python] Skipped: $(PY_DIR) not initialized" -ForegroundColor Yellow; }
+	if (Test-Path "$(PY_DIR)\pyproject.toml") { Write-Host "[test-python] pytest with coverage (branches, xdist)" -ForegroundColor Cyan; Push-Location "$(PY_DIR)"; poetry run pytest --cov=model_trainer --cov-branch --cov-report=term-missing -v -n auto; Pop-Location; } else { Write-Host "[test-python] Skipped: $(PY_DIR) not initialized" -ForegroundColor Yellow; }
 
 # Run lint then tests without recursive make chatter
 check: lint test
+
+cleanup-corpus-cache:
+	python .\scripts\cleanup_corpus_cache.py
+
+cleanup-tokenizers:
+	python .\scripts\cleanup_tokenizers.py
 
 start:
 	if (-not (Test-Path ".env") -and (Test-Path ".env.example")) { Write-Host "[env] Creating .env from .env.example" -ForegroundColor Yellow; Copy-Item ".env.example" ".env" }

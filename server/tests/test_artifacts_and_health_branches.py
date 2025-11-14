@@ -19,12 +19,19 @@ def test_healthz_logs_and_ready_branches(tmp_path: Path) -> None:
     assert hz.status == "ok"
 
 
-def test_artifacts_resolve_base_not_found(tmp_path: Path) -> None:
+def test_runs_artifact_pointer_not_found(tmp_path: Path) -> None:
+    import fakeredis
+    from model_trainer.core.services.container import ServiceContainer
+
     os.environ["APP__ARTIFACTS_ROOT"] = str(tmp_path / "artifacts")
     app = create_app(Settings())
-    client = TestClient(app)
-    # Non-existent tokenizer id triggers 404 at resolve base check
-    r = client.get("/artifacts/tokenizers/tid/download", params={"path": "tokenizer.json"})
+    cont: ServiceContainer = app.state.container
+    fake = fakeredis.FakeRedis(decode_responses=True)
+    cont.redis = fake
+    cont.training_orchestrator._redis = fake
+    client = TestClient(app, raise_server_exceptions=False)
+    # Missing pointer returns 404
+    r = client.get("/runs/run-xyz/artifact")
     assert r.status_code == 404
 
 

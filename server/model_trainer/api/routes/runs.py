@@ -12,6 +12,7 @@ from ...core.infra.paths import model_logs_path
 from ...core.logging.types import LoggingExtra
 from ...core.services.container import ServiceContainer
 from ..middleware import api_key_dependency
+from ..schemas.pointers import ArtifactPointer
 from ..schemas.runs import (
     CancelResponse,
     EvaluateRequest,
@@ -67,6 +68,10 @@ class _RunsRoutes:
         orchestrator = self.c.training_orchestrator
         result: EvaluateResponse = orchestrator.get_evaluation(run_id)
         return result
+
+    def run_artifact_pointer(self: _RunsRoutes, run_id: str) -> ArtifactPointer:
+        orchestrator = self.c.training_orchestrator
+        return orchestrator.get_artifact_pointer(run_id)
 
     def run_logs(self: _RunsRoutes, run_id: str, tail: int = 200) -> PlainTextResponse:
         path = str(model_logs_path(self.c.settings, run_id))
@@ -173,6 +178,12 @@ def build_router(container: ServiceContainer) -> APIRouter:
         h.run_eval_result,
         methods=["GET"],
         response_model=EvaluateResponse,
+    )
+    router.add_api_route(
+        "/{run_id}/artifact",
+        h.run_artifact_pointer,
+        methods=["GET"],
+        response_model=ArtifactPointer,
     )
     router.add_api_route(
         "/{run_id}/logs",

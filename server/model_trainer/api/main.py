@@ -9,7 +9,7 @@ from ..core.errors.handlers import install_exception_handlers
 from ..core.logging.setup import setup_logging
 from ..core.services.container import ServiceContainer
 from .middleware import RequestIdMiddleware, api_key_dependency
-from .routes import artifacts, health, runs, tokenizers
+from .routes import health, runs, tokenizers
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -32,7 +32,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(
         tokenizers.build_router(container), prefix="/tokenizers", tags=["tokenizers"]
     )
-    app.include_router(artifacts.build_router(container), tags=["artifacts"])
+    # Local artifacts routes removed: artifacts are now stored in data-bank-api
 
     # Errors
     install_exception_handlers(app)

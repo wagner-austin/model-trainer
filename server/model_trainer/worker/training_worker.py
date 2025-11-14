@@ -13,8 +13,7 @@ from ..core.config.settings import Settings
 from ..core.contracts.compute import LocalCPUProvider
 from ..core.contracts.model import ModelTrainConfig
 from ..core.contracts.queue import EvalJobPayload, TrainJobPayload, TrainRequestPayload
-from ..core.infra.paths import model_dir, model_logs_path
-from ..core.logging.service import LoggingService
+from ..core.infra.paths import model_dir
 from ..core.services.container import ServiceContainer
 from ..core.services.data import corpus_fetcher as corpus_fetcher_mod
 from ..core.services.tokenizer.bpe_backend import BPEBackend
@@ -207,39 +206,29 @@ def process_train_job(payload: TrainJobPayload) -> None:
         return bool(val == "1")
 
     try:
-        # Per-run structured log (attach before training starts)
-        logsvc = LoggingService.create()
-        run_log_path = str(model_logs_path(settings, run_id))
-        per_run_logger = logsvc.attach_run_file(
-            path=run_log_path, category="training", service="worker", run_id=run_id
-        )
         # Initial heartbeat and config logging
         import time as _time
 
         _hb(_time.time())
-        per_run_logger.info(
-            "Training started",
-            extra={
-                "event": "train_started",
-                "run_id": run_id,
-                "model_family": cfg.model_family,
-                "model_size": cfg.model_size,
-                "max_seq_len": cfg.max_seq_len,
-                "num_epochs": cfg.num_epochs,
-                "batch_size": cfg.batch_size,
-                "learning_rate": cfg.learning_rate,
-                "tokenizer_id": cfg.tokenizer_id,
-                "corpus_path": cfg.corpus_path,
-                "steps": 0,
-            },
+        log.info(
+            "Training started run_id=%s model_family=%s model_size=%s max_seq_len=%d "
+            "num_epochs=%d batch_size=%d learning_rate=%.6f tokenizer_id=%s steps=%d",
+            run_id,
+            cfg.model_family,
+            cfg.model_size,
+            cfg.max_seq_len,
+            cfg.num_epochs,
+            cfg.batch_size,
+            cfg.learning_rate,
+            cfg.tokenizer_id,
+            0,
         )
         # Publish started event
         _emit_started_event(r, run_id, user_id, cfg, threads)
 
         def _progress(step: int, epoch: int, loss: float) -> None:
-            per_run_logger.info(
-                "Training progress",
-                extra={"event": "train_progress", "run_id": run_id, "steps": step, "loss": loss},
+            log.info(
+                "Training progress run_id=%s epoch=%d steps=%d loss=%.4f", run_id, epoch, step, loss
             )
             _emit_progress_event(
                 r,
@@ -280,15 +269,12 @@ def process_train_job(payload: TrainJobPayload) -> None:
             # Mark failed on cancellation and do not persist weights
             r.set(f"{STATUS_KEY_PREFIX}{run_id}", "failed")
             r.set(f"{MSG_KEY_PREFIX}{run_id}", "Training cancelled")
-            per_run_logger.info(
-                "Training cancelled",
-                extra={
-                    "event": "train_cancelled",
-                    "run_id": run_id,
-                    "loss": result.loss,
-                    "perplexity": result.perplexity,
-                    "steps": result.steps,
-                },
+            log.info(
+                "Training cancelled run_id=%s loss=%.4f perplexity=%.2f steps=%d",
+                run_id,
+                result.loss,
+                result.perplexity,
+                result.steps,
             )
             _emit_failed_event(r, run_id, user_id, "Training cancelled", "canceled")
         else:
@@ -297,15 +283,12 @@ def process_train_job(payload: TrainJobPayload) -> None:
             # Save weights via backend lifecycle
             out_dir = str(model_dir(settings, run_id))
             _ = backend.save(prepared, out_dir)
-            per_run_logger.info(
-                "Training completed",
-                extra={
-                    "event": "train_completed",
-                    "run_id": run_id,
-                    "loss": result.loss,
-                    "perplexity": result.perplexity,
-                    "steps": result.steps,
-                },
+            log.info(
+                "Training completed run_id=%s loss=%.4f perplexity=%.2f steps=%d",
+                run_id,
+                result.loss,
+                result.perplexity,
+                result.steps,
             )
             _emit_completed_event(
                 r,
@@ -315,8 +298,6 @@ def process_train_job(payload: TrainJobPayload) -> None:
                 float(result.perplexity),
                 out_dir,
             )
-        # Release handler for long-running worker process
-        logsvc.close_run_file(path=run_log_path)
     except Exception as e:
         r.set(f"{STATUS_KEY_PREFIX}{run_id}", "failed")
         try:
